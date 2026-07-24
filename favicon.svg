@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="ballGradient" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:0.1" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background circle with gradient -->
+  <circle cx="50" cy="50" r="48" fill="#1a2035" stroke="#3b82f6" stroke-width="2"/>
+
+  <!-- Soccer ball design -->
+  <!-- Center pentagon -->
+  <path d="M 50 25 L 60 35 L 55 47 L 45 47 L 40 35 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Top left pentagon -->
+  <path d="M 30 30 L 40 35 L 38 45 L 25 43 L 22 35 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Top right pentagon -->
+  <path d="M 70 30 L 78 35 L 75 43 L 62 45 L 60 35 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Left pentagon -->
+  <path d="M 25 50 L 38 45 L 40 58 L 30 65 L 20 58 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Right pentagon -->
+  <path d="M 75 50 L 80 58 L 70 65 L 60 58 L 62 45 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Bottom left hexagon -->
+  <path d="M 30 65 L 40 58 L 45 68 L 40 78 L 28 75 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Bottom pentagon -->
+  <path d="M 50 75 L 60 68 L 62 78 L 50 82 L 38 78 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Bottom right hexagon -->
+  <path d="M 70 65 L 72 75 L 60 78 L 55 68 L 60 58 Z" fill="#ffffff" stroke="#1a2035" stroke-width="1.5"/>
+
+  <!-- Center connections -->
+  <path d="M 45 47 L 38 45" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 55 47 L 62 45" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 45 47 L 40 58" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 55 47 L 60 58" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 45 68 L 40 58" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 55 68 L 60 58" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 45 68 L 50 75" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+  <path d="M 55 68 L 50 75" stroke="#1a2035" stroke-width="1.5" fill="none"/>
+
+  <!-- Shine effect -->
+  <ellipse cx="38" cy="35" rx="8" ry="6" fill="url(#ballGradient)" opacity="0.6"/>
+</svg>

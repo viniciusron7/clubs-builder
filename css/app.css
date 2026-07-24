@@ -1,0 +1,228 @@
+/* ============================================================================
+ * app.css — Complementos ao vendor.css (Tailwind compilado do original).
+ * Define utilitários de opacidade que o build original não incluiu e ajusta
+ * componentes nativos. Reaproveita as CSS vars (--color-*) do vendor.css.
+ * ========================================================================== */
+
+/* sliders */
+input[type="range"] {
+  accent-color: var(--color-btn-blue);
+  cursor: pointer;
+}
+
+/* linha de archetypes: flex que enche a largura (o vendor.css não tem grid-cols-7/13) */
+.arch-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.arch-row > button { flex: 1 1 84px; max-width: 132px; }
+
+/* grid de atributos: 1→2→3→4 colunas (como o original) */
+.attr-grid { display: grid; gap: 0.75rem; align-content: start; grid-template-columns: 1fr; }
+@media (min-width: 640px) { .attr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .attr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1600px) { .attr-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* z-index e tamanhos arbitrários do modal/toast */
+.z-\[90\] { z-index: 90; }
+.z-\[100\] { z-index: 100; }
+.max-h-\[92vh\] { max-height: 92vh; }
+.max-h-\[90vh\] { max-height: 90vh; }
+.max-h-\[34vh\] { max-height: 34vh; }
+
+/* utilitários extra usados nos modais */
+.border-dashed { border-style: dashed; }
+.border-feat-special { border-color: var(--color-feature-special); }
+.border-feat-special\/60 { border-color: color-mix(in srgb, var(--color-feature-special) 60%, transparent); }
+.border-state-success\/40 { border-color: color-mix(in srgb, rgb(var(--color-state-success)) 40%, transparent); }
+.gap-5 { gap: 1.25rem; }
+.h-7 { height: 1.75rem; } .w-7 { width: 1.75rem; }
+.leading-snug { line-height: 1.375; }
+.min-h-\[52px\] { min-height: 52px; }
+.min-h-\[54px\] { min-height: 54px; }
+.min-h-\[64px\] { min-height: 64px; }
+@media (min-width: 640px) {
+  .sm\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sm\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .lg\:grid-cols-9 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+}
+
+/* extras do seletor de posições / modal de otimização */
+.bg-black\/30 { background-color: rgba(0, 0, 0, 0.3); }
+.mr-1 { margin-right: 0.25rem; }
+.pl-6 { padding-left: 1.5rem; }
+.w-28 { width: 7rem; }
+.max-w-xl { max-width: 36rem; }
+.max-w-2xl { max-width: 42rem; }
+.normal-case { text-transform: none; }
+.font-normal { font-weight: 400; }
+.position-actions { flex-wrap: wrap; }
+
+@media (max-width: 480px) {
+  header > div { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+  header a { font-size: 0.875rem !important; }
+  #btn-share, #btn-image { padding: 0.375rem 0.5rem; font-size: 0.6875rem; }
+  #summary-bar > div { min-width: 0; }
+  #summary-bar > div:last-child, .position-actions { width: 100%; }
+  #summary-bar > div:last-child { justify-content: flex-start; gap: 0.5rem; flex-wrap: wrap; }
+  .position-actions > button { flex: 1 1 auto; }
+  #tabs > button { flex: 1 1 calc(50% - 0.25rem); }
+}
+
+/* chips de atributos a otimizar (ligado = azul; desligado = cinza riscado) */
+.opt-chip {
+  padding: 0.25rem 0.625rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 600;
+  background: var(--color-btn-blue); color: #fff; border: 1px solid transparent;
+  cursor: pointer; transition: filter .15s, background .15s, color .15s;
+}
+.opt-chip:hover { filter: brightness(1.12); }
+.opt-chip.opt-attr-off {
+  background: var(--color-bg-card); color: var(--color-text-disabled); text-decoration: line-through;
+}
+
+/* lista de atletas Ultimate Team */
+.ut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.ut-list-head {
+  display: grid;
+  grid-template-columns: 38px 46px minmax(0, 1fr) 104px 98px;
+  gap: 0.625rem;
+  align-items: center;
+  padding: 0 0.625rem 0.25rem;
+  color: var(--color-text-disabled);
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ut-card {
+  display: grid;
+  grid-template-columns: 38px 46px minmax(0, 1fr) 104px 98px;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-height: 52px;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 0.5rem;
+  background: var(--color-bg-panel);
+  text-align: left;
+  transition: opacity .15s, filter .15s, transform .15s, border-color .15s, background .15s;
+}
+.ut-card-buildable:hover {
+  transform: translateY(-1px);
+  background: var(--color-bg-card);
+  border-color: color-mix(in srgb, rgb(var(--color-state-success)) 55%, transparent);
+}
+.ut-card-locked {
+  opacity: .38;
+  filter: grayscale(.72);
+  cursor: not-allowed;
+}
+.ut-card-img {
+  width: 34px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.ut-card-img img {
+  width: 34px;
+  max-width: 34px;
+  max-height: 46px;
+  object-fit: contain;
+}
+.ut-card-main { min-width: 0; }
+.ut-ovr {
+  color: var(--color-accent-light);
+  font-weight: 800;
+  font-size: 0.95rem;
+  line-height: 1;
+  text-align: center;
+}
+.ut-name {
+  min-width: 0;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ut-pos {
+  color: var(--color-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ut-cost {
+  justify-self: end;
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .ut-list-head { grid-template-columns: 34px 40px minmax(0, 1fr) 74px; }
+  .ut-list-head span:nth-child(4) { display: none; }
+  .ut-card { grid-template-columns: 34px 40px minmax(0, 1fr) 74px; gap: 0.5rem; }
+  .ut-pos { display: none; }
+  .ut-cost { font-size: 0.6875rem; }
+}
+
+/* variantes de opacidade ausentes no vendor.css (usadas pelo app) */
+.bg-btn-blue\/20 { background-color: color-mix(in srgb, var(--color-btn-blue) 20%, transparent); }
+.bg-feat-special\/30 { background-color: color-mix(in srgb, var(--color-feature-special) 30%, transparent); }
+.bg-feat-special { background-color: var(--color-feature-special); }
+.border-state-info\/40 { border-color: color-mix(in srgb, rgb(var(--color-state-info)) 40%, transparent); }
+.bg-app-bg\/95 { background-color: color-mix(in srgb, var(--color-bg-app) 95%, transparent); }
+.bg-app-bg\/40 { background-color: color-mix(in srgb, var(--color-bg-app) 40%, transparent); }
+
+/* scrollbar discreta nos painéis roláveis */
+.overflow-y-auto::-webkit-scrollbar { width: 8px; }
+.overflow-y-auto::-webkit-scrollbar-thumb { background: var(--color-bg-card); border-radius: 4px; }
+.overflow-y-auto::-webkit-scrollbar-track { background: transparent; }
+
+/* grayscale helper (caso ausente) */
+.grayscale { filter: grayscale(1); }
+
+/* esconde as setas do input number só no level (mantém usável) */
+#level-input::-webkit-outer-spin-button,
+#level-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* utilitários Tailwind ausentes no vendor.css (o build original não os usou) */
+.content-start { align-content: flex-start; }
+.self-start { align-self: flex-start; }
+.col-span-full { grid-column: 1 / -1; }
+.space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.25rem; }
+.p-10 { padding: 2.5rem; }
+.p-2\.5 { padding: 0.625rem; }
+.pb-3 { padding-bottom: 0.75rem; }
+.pt-1\.5 { padding-top: 0.375rem; }
+.bottom-6 { bottom: 1.5rem; }
+.h-11 { height: 2.75rem; } .w-11 { width: 2.75rem; }
+.min-h-\[300px\] { min-height: 300px; }
+.min-h-\[58px\] { min-height: 58px; }
+.min-w-\[54px\] { min-width: 54px; }
+.max-h-\[64vh\] { max-height: 64vh; }
+.flex-\[3\] { flex: 3 1 0%; }
+.text-\[9px\] { font-size: 9px; line-height: 1; }
+.accent-btn-blue { accent-color: var(--color-btn-blue); }
+.hover\:bg-b-primary:hover { background-color: var(--color-border-primary); }
+@media (min-width: 640px) {
+  .sm\:text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+  .sm\:h-14 { height: 3.5rem; } .sm\:w-14 { width: 3.5rem; }
+  .sm\:p-3 { padding: 0.75rem; } .sm\:pb-4 { padding-bottom: 1rem; }
+}
+@media (min-width: 1024px) {
+  .lg\:sticky { position: sticky; }
+  .lg\:top-32 { top: 8rem; }
+}
