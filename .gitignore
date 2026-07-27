@@ -11,8 +11,10 @@ Thumbs.db
 # Instruções locais para assistentes
 AGENTS.md
 CLAUDE.md
+.agents/
 .claude/
 .codex/
+skills-lock.json
 
 # Dependências e configurações locais
 node_modules/
