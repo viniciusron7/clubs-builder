@@ -58,7 +58,8 @@ Every optimizer result is re-validated in `optimize()` before it reaches the UI:
 - **OVR uses purchased attribute values only.** Body and facility adjustments change effective in-match attributes (`derived.effective`), never the lobby OVR estimate. Tests assert this.
 - Attributes only ever go *up* from their archetype `baseValue`; `build.attributes` omits any attribute still at base.
 - `affordableTarget` gates every manual attribute increase so available AP never goes negative; lowering always refunds.
-- Facilities: player and AI share one club-level budget, but AI facilities only affect AI teammates — they must never appear in `facAdj`.
+- Facilities: Player and AI share one club-level budget, but AI facilities only affect AI teammates — they must never appear in `facAdj`.
 - Exactly one specialization can be active, occupying one of the 4 signature slots.
 - Quick Unlock for both playstyles and specializations routes through `Calc.requirementUnlockPlan` — the single source of AP-cost truth. Don't add a parallel cost calculation.
 - CSS: `css/vendor.css` is a compiled Tailwind bundle carried over from the original and is not regenerated. Missing utilities go in `css/app.css` by hand.
+
