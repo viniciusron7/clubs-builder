@@ -1,4 +1,39 @@
+# Sistema operacional
 .DS_Store
-*.log
-node_modules/
+Thumbs.db
 
+# Editores e IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Instruções locais para assistentes
+AGENTS.md
+CLAUDE.md
+.claude/
+.codex/
+
+# Dependências e configurações locais
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Logs e arquivos temporários
+*.log
+*.tmp
+*.temp
+*.cache
+*.pid
+tmp/
+temp/
+
+# Relatórios e saídas geradas
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+screenshots/
+dist/
+build/
