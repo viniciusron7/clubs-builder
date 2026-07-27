@@ -10,6 +10,21 @@ input[type="range"] {
   cursor: pointer;
 }
 
+/* foco visível por teclado (o vendor.css removeu o outline padrão sem repor nada) */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent-primary-light);
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
+button:not(:disabled) { cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+}
+
 /* linha de archetypes: flex que enche a largura (o vendor.css não tem grid-cols-7/13) */
 .arch-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .arch-row > button { flex: 1 1 84px; max-width: 132px; }
@@ -20,12 +35,19 @@ input[type="range"] {
 @media (min-width: 1280px) { .attr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1600px) { .attr-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
-/* z-index e tamanhos arbitrários do modal/toast */
+/* z-index e tamanhos arbitrários do modal/toast.
+   dvh como segunda declaração: navegadores antigos ficam no vh, os novos escapam
+   da barra de endereço que aparece/some no mobile. */
 .z-\[90\] { z-index: 90; }
 .z-\[100\] { z-index: 100; }
-.max-h-\[92vh\] { max-height: 92vh; }
-.max-h-\[90vh\] { max-height: 90vh; }
-.max-h-\[34vh\] { max-height: 34vh; }
+.max-h-\[92vh\] { max-height: 92vh; max-height: 92dvh; }
+.max-h-\[90vh\] { max-height: 90vh; max-height: 90dvh; }
+.max-h-\[34vh\] { max-height: 34vh; max-height: 34dvh; }
+
+/* tamanhos de texto arbitrários que o app usa 21 vezes e o vendor.css nunca compilou —
+   sem eles toda a tipografia secundária caía no tamanho herdado. */
+.text-\[10px\] { font-size: 10px; line-height: 1.25; }
+.text-\[11px\] { font-size: 11px; line-height: 1.3; }
 
 /* utilitários extra usados nos modais */
 .border-dashed { border-style: dashed; }
@@ -59,13 +81,39 @@ input[type="range"] {
 
 @media (max-width: 480px) {
   header > div { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
-  header a { font-size: 0.875rem !important; }
+  header h1 { font-size: 0.875rem !important; }
   #btn-share, #btn-image { padding: 0.375rem 0.5rem; font-size: 0.6875rem; }
   #summary-bar > div { min-width: 0; }
   #summary-bar > div:last-child, .position-actions { width: 100%; }
   #summary-bar > div:last-child { justify-content: flex-start; gap: 0.5rem; flex-wrap: wrap; }
   .position-actions > button { flex: 1 1 auto; }
   #tabs > button { flex: 1 1 calc(50% - 0.25rem); }
+}
+
+@media (max-width: 640px) {
+  /* header (56px) + barra de resumo (~150px) travavam 1/4 da tela do celular.
+     Só o header continua fixo; o resumo rola junto com a página. */
+  main > .sticky { position: static; }
+
+  /* 13 archetypes em 4 linhas comiam ~420px antes de qualquer conteúdo:
+     vira uma faixa deslizante de uma linha. */
+  .arch-row { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 0.25rem; }
+  .arch-row > button { flex: 0 0 84px; max-width: 84px; scroll-snap-align: start; }
+
+  /* alvos de toque: mínimo utilizável com o dedo */
+  [data-star], [data-pos], #archetype-filters button, [data-spec-assign], .ut-chip, .seg > button { min-height: 40px; }
+  [data-star] { min-width: 40px; }
+
+  /* um único eixo de rolagem dentro do modal (o de dentro guardava o conteúdo) */
+  .max-h-\[34vh\] { max-height: none; }
+  .ps-picker-grid { max-height: none; }
+  .ut-list { max-height: none; }
+}
+
+/* o painel de detalhe vazio virava uma caixa morta de 300px no fim da página */
+@media (max-width: 1023px) {
+  #panel { min-height: 0; }
+  #panel > div { min-height: 0; }
 }
 
 /* chips de atributos a otimizar (ligado = azul; desligado = cinza riscado) */
@@ -78,6 +126,142 @@ input[type="range"] {
 .opt-chip.opt-attr-off {
   background: var(--color-bg-card); color: var(--color-text-disabled); text-decoration: line-through;
 }
+
+/* ---- linha de atributo (button, então só elementos inline dentro) ---- */
+.attr-bar {
+  display: block; width: 100%; height: 0.75rem; overflow: hidden;
+  border-radius: 9999px; background: var(--color-bg-card); border: 1px solid var(--color-border-primary);
+}
+.attr-bar-fill { display: block; height: 100%; border-radius: 9999px; transition: width .3s; }
+/* skill moves / weak foot: 2..5 estrelas em vez da barra de 1-99 */
+.attr-stars { display: block; font-size: 0.95rem; line-height: 0.75rem; letter-spacing: .14em; color: var(--color-feature-premium); }
+.attr-stars-off { color: var(--color-border-secondary); }
+
+/* ============================================================================
+ * PlayStyles — slots clicáveis, seletor e lista de requisitos.
+ * ========================================================================== */
+.ps-slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+@media (min-width: 640px) { .ps-slot-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .ps-slot-grid { grid-template-columns: repeat(9, minmax(0, 1fr)); } }
+
+.ps-slot {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.25rem; min-height: 78px; padding: 0.5rem 0.25rem;
+  border-radius: 0.75rem; border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-app); text-align: center;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.ps-slot img { width: 2.25rem; height: 2.25rem; object-fit: contain; }
+.ps-slot-name { font-size: 10px; line-height: 1.15; color: #fff; font-weight: 600; }
+.ps-slot-hint { font-size: 9px; line-height: 1; color: var(--color-text-muted); }
+.ps-slot-plus { font-size: 1.35rem; line-height: 1; color: var(--color-text-muted); }
+.ps-slot-filled {
+  background: color-mix(in srgb, var(--color-btn-blue) 18%, transparent);
+  border-color: rgb(var(--color-state-info));
+  cursor: pointer;
+}
+.ps-slot-filled:hover { border-color: rgb(var(--color-state-error)); transform: translateY(-1px); }
+.ps-slot-filled:hover .ps-slot-x { opacity: 1; }
+.ps-slot-x {
+  position: absolute; top: 3px; right: 5px; font-size: 10px;
+  color: rgb(var(--color-state-error)); opacity: 0; transition: opacity .15s;
+}
+.ps-slot-empty { border-style: dashed; border-color: var(--color-border-secondary); cursor: pointer; }
+.ps-slot-empty:hover { border-color: var(--color-accent-primary-light); background: var(--color-bg-card); transform: translateY(-1px); }
+.ps-slot-empty:hover .ps-slot-plus { color: var(--color-accent-primary-light); }
+.ps-slot-locked { opacity: .5; }
+
+.ps-picker {
+  margin-top: 0.75rem; overflow: hidden;
+  border: 1px solid var(--color-accent-primary); border-radius: 0.75rem;
+  background: var(--color-bg-panel);
+}
+.ps-picker-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--color-border-primary);
+  font-size: 0.8125rem; font-weight: 700; color: #fff;
+}
+.ps-picker-count { margin-left: 0.375rem; font-size: 0.6875rem; font-weight: 500; color: var(--color-text-muted); }
+.ps-picker-close {
+  width: 1.75rem; height: 1.75rem; flex-shrink: 0; border-radius: 0.5rem;
+  background: var(--color-bg-card); color: var(--color-text-muted); font-size: 0.8125rem;
+}
+.ps-picker-close:hover { background: var(--color-border-primary); color: #fff; }
+.ps-picker-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.375rem;
+  padding: 0.625rem; max-height: 34vh; overflow-y: auto;
+}
+@media (min-width: 640px) { .ps-picker-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .ps-picker-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ps-pick {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; text-align: left;
+  border-radius: 0.5rem; border: 1px solid var(--color-border-primary); background: var(--color-bg-app);
+  transition: border-color .15s, background .15s;
+}
+.ps-pick img { width: 1.75rem; height: 1.75rem; flex-shrink: 0; object-fit: contain; }
+.ps-pick:hover { border-color: var(--color-accent-primary-light); background: var(--color-bg-card); }
+.ps-pick-name {
+  min-width: 0; font-size: 0.75rem; font-weight: 700; color: var(--color-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ps-pick:hover .ps-pick-name { color: #fff; }
+.ps-picker-empty { padding: 1rem 0.75rem; text-align: center; font-size: 0.75rem; color: var(--color-text-muted); }
+
+.ps-row {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem;
+  border-radius: 0.5rem; border: 1px solid var(--color-border-primary); background: var(--color-bg-app);
+}
+.ps-row.is-on { background: color-mix(in srgb, var(--color-btn-blue) 18%, transparent); border-color: rgb(var(--color-state-info)); }
+.ps-row.is-fac { background: color-mix(in srgb, rgb(var(--color-state-success)) 12%, transparent); border-color: color-mix(in srgb, rgb(var(--color-state-success)) 40%, transparent); }
+.ps-row.is-ready { border-color: color-mix(in srgb, var(--color-accent-primary) 45%, transparent); }
+.ps-row-icon { width: 1.75rem; height: 1.75rem; flex-shrink: 0; object-fit: contain; }
+.ps-row-icon.is-locked { filter: grayscale(1); opacity: .55; }
+.ps-row-main { flex: 1; min-width: 0; }
+.ps-row-name {
+  display: block; font-size: 0.75rem; font-weight: 700; color: var(--color-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ps-row.is-on .ps-row-name { color: #fff; }
+.ps-row-req { display: block; font-size: 9px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-tag { flex-shrink: 0; padding: 0 0.4rem; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.ps-tag-fac { color: rgb(var(--color-state-success)); }
+.ps-tag-on { color: rgb(var(--color-state-info)); }
+.ps-tag-ready { color: var(--color-accent-primary-light); }
+.ps-tag-off { color: var(--color-text-disabled); }
+.ps-unlock {
+  flex-shrink: 0; padding: 0.375rem 0.5rem; border-radius: 0.375rem;
+  font-size: 9px; line-height: 1.15; font-weight: 800;
+  background: var(--color-btn-purple); color: #fff;
+}
+.ps-unlock:hover:not(:disabled) { background: var(--color-btn-purple-hover); }
+.ps-unlock:disabled { background: var(--color-bg-card); color: var(--color-text-disabled); cursor: not-allowed; }
+
+/* ---- barra de filtros dos atletas UT ---- */
+.ut-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.625rem; }
+.ut-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.ut-chip {
+  padding: 0.3rem 0.55rem; border-radius: 0.5rem; font-size: 0.6875rem; font-weight: 800;
+  background: var(--color-bg-panel); color: var(--color-text-muted); border: 1px solid transparent;
+  transition: background .15s, color .15s;
+}
+.ut-chip:hover { background: var(--color-bg-card); color: #fff; }
+.ut-chip.is-on { background: var(--color-btn-blue); color: #fff; }
+.seg {
+  display: flex; padding: 2px; border-radius: 0.5rem;
+  background: var(--color-bg-card); border: 1px solid var(--color-border-primary);
+}
+.seg > button { padding: 0.3rem 0.65rem; border-radius: 0.375rem; font-size: 0.6875rem; font-weight: 800; color: var(--color-text-muted); }
+.seg > button:hover { color: #fff; }
+.seg > button.is-on { background: var(--color-btn-blue); color: #fff; }
+.ut-search {
+  width: 100%; padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; color: #fff;
+  background: var(--color-bg-card); border: 1px solid var(--color-border-primary);
+}
+.ut-search:focus { outline: none; border-color: var(--color-border-focus); }
+@media (min-width: 640px) { .ut-search { width: 15rem; } }
+.ut-empty { padding: 2.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--color-text-muted); }
+.ut-more { padding-top: 0.5rem; text-align: center; font-size: 0.6875rem; color: var(--color-text-disabled); }
 
 /* lista de atletas Ultimate Team */
 .ut-list {
@@ -100,6 +284,7 @@ input[type="range"] {
   letter-spacing: .08em;
   text-transform: uppercase;
 }
+.ut-list-head span:last-child { text-align: right; }
 .ut-card {
   display: grid;
   grid-template-columns: 38px 46px minmax(0, 1fr) 104px 98px;
@@ -120,8 +305,8 @@ input[type="range"] {
   border-color: color-mix(in srgb, rgb(var(--color-state-success)) 55%, transparent);
 }
 .ut-card-locked {
-  opacity: .38;
-  filter: grayscale(.72);
+  opacity: .62;
+  filter: grayscale(.55);
   cursor: not-allowed;
 }
 .ut-card-img {
@@ -147,6 +332,7 @@ input[type="range"] {
   text-align: center;
 }
 .ut-name {
+  display: block; /* era span inline: overflow/ellipsis não valiam e o nome invadia a coluna de custo */
   min-width: 0;
   color: #fff;
   font-weight: 700;
@@ -193,10 +379,6 @@ input[type="range"] {
 
 /* grayscale helper (caso ausente) */
 .grayscale { filter: grayscale(1); }
-
-/* esconde as setas do input number só no level (mantém usável) */
-#level-input::-webkit-outer-spin-button,
-#level-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* utilitários Tailwind ausentes no vendor.css (o build original não os usou) */
 .content-start { align-content: flex-start; }

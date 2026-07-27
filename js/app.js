@@ -21,11 +21,33 @@
   const ui = {
     filter: 'all', selectedAttr: null, modal: null, facilityKind: 'player',
     optimizing: false, optimizeRunId: 0, optimizeController: null,
+    psPicker: false,
     utPlayers: null, utLoading: false, utError: null, utQuery: '',
+    utPositions: [], utOnlyBuildable: true, utPlanCache: null,
   };
   const OUTFIELD_POSITIONS = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
+  // ponytail: teto de linhas desenhadas por render; sobe se a lista virar virtualizada.
+  const UT_RENDER_LIMIT = 250;
   const HISTORY_LIMIT = 100;
   const history = window.BuildHistory.create(HISTORY_LIMIT);
+
+  // Recriar uma seção com innerHTML descarta o elemento focado — o campo de LVL e a busca de
+  // atletas perdiam foco (e o resto do que estava sendo digitado) a cada tecla. Guarda id +
+  // seleção antes da troca e devolve depois. Vale para qualquer input em região re-renderizada.
+  function selectionOf(el) {
+    try { return [el.selectionStart, el.selectionEnd]; } catch (e) { return null; } // type=number lança
+  }
+  function keepFocus(update) {
+    const active = document.activeElement;
+    const id = active && active.id;
+    const range = id ? selectionOf(active) : null;
+    update();
+    if (!id) return;
+    const next = document.getElementById(id);
+    if (!next || next === active || next === document.activeElement) return;
+    next.focus({ preventScroll: true });
+    if (range && range[0] != null) { try { next.setSelectionRange(range[0], range[1]); } catch (e) {} }
+  }
 
   function cloneBuild(value = build) {
     return JSON.parse(JSON.stringify(value));
@@ -49,6 +71,7 @@
   function restoreBuild(snapshot) {
     build = C.normalizeBuild(Object.assign(defaultBuild(), cloneBuild(snapshot))).build;
     ui.selectedAttr = null;
+    bodyDragBefore = null; // um arrasto pendente não pode ser gravado contra um estado já descartado
     render();
   }
   function undoBuild() {
@@ -86,15 +109,18 @@
   // -------------------- render principal --------------------
   function render() {
     const d = C.derive(build);
-    renderSummary(d);
-    renderArchetypes();
-    renderPositions(d);
-    renderTabs();
-    renderAttributes(d);
-    renderDetailPanel(d);
-    renderModal(d);
+    keepFocus(() => {
+      renderSummary(d);
+      renderArchetypes();
+      renderPositions(d);
+      renderTabs();
+      renderAttributes(d);
+      renderDetailPanel(d);
+      renderModal(d);
+    });
     syncUrl();
   }
+  const refreshModal = () => keepFocus(() => renderModal(C.derive(build)));
 
   // -------------------- summary bar --------------------
   function renderSummary(d) {
@@ -122,13 +148,15 @@
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-1.5">
           <span class="text-xs text-t-muted uppercase">LVL</span>
-          <input id="level-input" type="number" min="1" max="${D.maxLevel}" value="${build.level}"
-            class="w-14 px-2 py-1 bg-app-card border border-b-primary rounded text-lg font-bold text-white text-center focus:outline-none focus:ring-2 focus:ring-accent" />
+          <input id="level-input" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
+            aria-label="Player level, 1 to ${D.maxLevel}" value="${build.level}"
+            class="w-14 px-2 py-1 bg-app-card border border-b-primary rounded text-lg font-bold text-white text-center" />
           <button id="level-max" class="px-2 py-1 bg-btn-purple hover:bg-btn-purple-hover text-white rounded font-bold text-xs transition-colors">MAX</button>
         </div>
         <div class="text-center min-w-[54px] leading-none">
-          <div class="text-xs text-t-muted uppercase mb-0.5">AP</div>
-          <div class="text-xl font-bold ${apClass}" title="${d.ap.spent} / ${d.ap.total}">${d.ap.available}</div>
+          <div class="text-xs text-t-muted uppercase mb-0.5">AP left</div>
+          <div class="text-xl font-bold ${apClass}">${d.ap.available}</div>
+          <div class="text-[10px] text-t-muted mt-0.5">${d.ap.spent} / ${d.ap.total}</div>
         </div>
         <div class="flex items-center gap-1">
           <button id="btn-undo" title="Undo (Ctrl/Cmd+Z)" ${undoDisabled ? 'disabled' : ''} class="px-2 py-1.5 rounded-lg font-bold text-xs transition-colors active:scale-95 ${undoDisabled ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}">UNDO</button>
@@ -146,13 +174,13 @@
     $('#archetype-filters').innerHTML = filters.map((f) => {
       const label = f === 'all' ? 'All' : (L.position[f.toLowerCase() + '_shorten'] || f);
       const active = ui.filter === f;
-      return `<button data-filter="${f}" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${active ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'}">${esc(label)}</button>`;
+      return `<button data-filter="${f}" aria-pressed="${active}" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${active ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'}">${esc(label)}</button>`;
     }).join('');
     const list = D.archetypes.filter((a) => ui.filter === 'all' || a.position === ui.filter);
     $('#archetype-grid').innerHTML = list.map((a) => {
       const sel = build.archetypeId === a.id;
       return `
-        <button data-arch="${a.id}" class="relative flex flex-col items-center gap-1.5 p-2 sm:p-3 rounded-xl border transition-all active:scale-95 ${sel ? 'bg-btn-blue border-state-info ring-2 ring-state-info shadow-lg' : 'bg-app-panel border-b-primary hover:bg-app-card hover:border-b-secondary'}">
+        <button data-arch="${a.id}" aria-pressed="${sel}" class="relative flex flex-col items-center gap-1.5 p-2 sm:p-3 rounded-xl border transition-all active:scale-95 ${sel ? 'bg-btn-blue border-state-info ring-2 ring-state-info shadow-lg' : 'bg-app-panel border-b-primary hover:bg-app-card hover:border-b-secondary'}">
           <img src="archetypes/${a.iconFileName}" alt="${esc(archName(a.id))}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain ${sel ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}" />
           <span class="text-[10px] sm:text-xs font-medium text-center leading-tight ${sel ? 'text-white' : 'text-t-muted'}">${esc(archName(a.id))}</span>
         </button>`;
@@ -168,7 +196,7 @@
       const on = build.positions.includes(p);
       const automatic = d.arch.position === 'GK';
       const ovr = on ? C.overallForPosition(p, d) : null;
-      return `<button data-pos="${p}" ${automatic ? 'disabled' : ''} title="${automatic ? 'Goalkeeper position is automatic' : on ? `${p}: estimated OVR ${ovr} (expected tolerance ±1)` : 'Add position'}" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${on ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'} ${automatic ? 'cursor-default' : ''}">${p}${on ? `<span class="px-1 rounded bg-black/30 text-[11px]">${ovr}</span>` : ''}</button>`;
+      return `<button data-pos="${p}" ${automatic ? 'disabled' : ''} aria-pressed="${on}" title="${automatic ? 'Goalkeeper position is automatic' : on ? `${p}: estimated OVR ${ovr} (expected tolerance ±1)` : 'Add position'}" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${on ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'} ${automatic ? 'cursor-default' : ''}">${p}${on ? `<span class="px-1 rounded bg-black/30 text-[11px]">${ovr}</span>` : ''}</button>`;
     }).join('');
     let summary = '';
     if (build.positions.length) {
@@ -182,8 +210,8 @@
       <div class="position-actions flex items-center gap-2">
         ${summary}
         <button id="btn-optimize" ${!build.positions.length ? 'disabled' : ''} class="px-3 py-2 rounded-lg font-bold text-sm transition-colors ${build.positions.length ? 'bg-btn-purple hover:bg-btn-purple-hover text-white' : 'bg-app-panel text-t-disabled cursor-not-allowed'}">⚡ Optimize Overall</button>
-        <button id="btn-utplayers" class="px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">Atletas UT</button>
-        <button id="btn-maxsum" class="px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-btn-blue hover:bg-btn-blue-hover text-white">Σ Max Sum</button>
+        <button id="btn-utplayers" class="px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">UT Players</button>
+        <button id="btn-maxsum" class="px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">Max Sum</button>
       </div>`;
   }
 
@@ -216,22 +244,26 @@
   }
   function attributeRow(a, d) {
     const body = d.bodyAdj[a.id] || 0, fac = d.facAdj[a.id] || 0, cv = a.currentValue;
-    const width = ((cv - 1) / 98) * 100, color = C.barColor(cv);
     const selected = ui.selectedAttr === a.id;
     const tag = (v) => v === 0 ? '' : `<span class="font-bold text-sm min-w-3 ${v < 0 ? 'text-state-error' : 'text-state-success'}">${v > 0 ? '+' : ''}${v}</span>`;
     const nameEl = a.isKeyAttribute
       ? `<span class="text-accent-light text-sm font-medium">${esc(attrName(a.id))}</span><span class="text-accent-light text-sm">★</span>`
       : `<span class="text-sm font-medium text-t-secondary">${esc(attrName(a.id))}</span>`;
     return `
-      <div data-attr="${a.id}" class="p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center cursor-pointer transition-all ${selected ? 'bg-b-primary ring-2 ring-[#6366f1]' : 'hover:bg-app-card active:bg-b-primary'}">
-        <div class="flex items-center justify-between mb-1.5">
-          <div class="flex items-center gap-2">${nameEl}</div>
-          <div class="flex items-center gap-1.5">${tag(body)}${tag(fac)}<span class="text-base font-bold text-white ml-auto">${cv}</span></div>
-        </div>
-        <div class="w-full h-3 bg-app-card rounded-full overflow-hidden border border-b-primary">
-          <div class="h-full rounded-full transition-all duration-300" style="width:${width}%;background-color:${color}"></div>
-        </div>
-      </div>`;
+      <button type="button" data-attr="${a.id}" aria-pressed="${selected}" class="w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
+        <span class="flex items-center justify-between mb-1.5 w-full">
+          <span class="flex items-center gap-2">${nameEl}</span>
+          <span class="flex items-center gap-1.5">${tag(body)}${tag(fac)}<span class="text-base font-bold text-white">${cv}</span></span>
+        </span>
+        ${attrMeter(a, cv)}
+      </button>`;
+  }
+  // skill moves / weak foot valem 2..5 estrelas — na barra de 1-99 um 3/5 aparecia vazio.
+  function attrMeter(a, cv) {
+    if (a.displayType === 'stars') {
+      return `<span class="attr-stars">${'★'.repeat(cv)}<span class="attr-stars-off">${'★'.repeat(Math.max(0, a.maxValue - cv))}</span></span>`;
+    }
+    return `<span class="attr-bar"><span class="attr-bar-fill" style="width:${((cv - 1) / 98) * 100}%;background-color:${C.barColor(cv)}"></span></span>`;
   }
 
   // -------------------- painel de detalhe do atributo (direita, sempre) --------------------
@@ -241,7 +273,50 @@
     const panel = $('#panel');
     if (!d.arch) { panel.innerHTML = placeholder('Select an archetype to begin.'); return; }
     if (ui.selectedAttr) { panel.innerHTML = attrEditor(d); return; }
-    panel.innerHTML = placeholder('Select an attribute to view details.');
+    panel.innerHTML = buildSummary(d);
+  }
+  // Sem atributo selecionado a coluna de 400px ficava só com um aviso cinza — agora carrega
+  // o que o usuário precisa pra decidir o próximo ponto de AP.
+  function buildSummary(d) {
+    const apPct = d.ap.total ? C.clamp((d.ap.spent / d.ap.total) * 100, 0, 100) : 0;
+    const overalls = C.overallMapForValues(build.positions || [], d, null);
+    const ovrRows = Object.keys(overalls).length
+      ? Object.entries(overalls).map(([pos, ovr]) =>
+        `<div class="flex items-center justify-between text-sm"><span class="text-t-muted">${pos}</span><span class="font-bold" style="color:${C.barColor(ovr)}">${ovr}</span></div>`).join('')
+      : '<p class="text-[11px] text-t-disabled">Pick a position above to see the estimated OVR.</p>';
+    const sigs = C.signatureSlots(build, d.categories).filter((s) => s.playStyleId);
+    const equipped = build.playstyles || [];
+    const row = (label, value, cls) => `<div class="flex items-center justify-between text-sm"><span class="text-t-muted">${label}</span><span class="font-bold ${cls || 'text-white'}">${value}</span></div>`;
+    const icon = (id, plus) => `<img src="playstyles/${plus ? 'plus/' : ''}${psIcon(id)}" alt="${esc(psName(id))}" title="${esc(psName(id))}${plus ? '+' : ''} — ${esc(psDesc(id))}" class="w-7 h-7 object-contain" />`;
+    return `
+      ${panelHead('Build Summary')}
+      <div class="p-4 space-y-4">
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-t-muted uppercase font-bold">Attribute Points</span>
+            <span class="${d.ap.available < 0 ? 'text-state-error' : 'text-t-secondary'}">${d.ap.spent} / ${d.ap.total}</span>
+          </div>
+          <span class="attr-bar"><span class="attr-bar-fill" style="width:${apPct}%;background-color:${d.ap.available < 0 ? '#ef4444' : '#10b981'}"></span></span>
+          <div class="text-[11px] text-t-disabled">${d.ap.available} AP left at level ${build.level}</div>
+        </div>
+        <div class="bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
+          <div class="text-[11px] text-t-muted uppercase font-bold">Estimated OVR <span class="normal-case font-normal">±1</span></div>
+          ${ovrRows}
+        </div>
+        <div class="bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
+          ${row('Body', `${build.height}cm / ${build.weight}kg`)}
+          ${d.accel ? row('AcceleRATE', d.accel, 'text-state-info') : ''}
+          ${row('PlayStyle slots', `${equipped.length} / ${d.slots.unlocked}`)}
+          ${row('Signature +', `${d.slots.signaturePlus} / 4`)}
+          ${row('Facilities', `${d.facilities.cost} / ${d.facilities.budget}`, d.facilities.cost > d.facilities.budget ? 'text-state-error' : 'text-white')}
+        </div>
+        ${sigs.length || equipped.length ? `
+          <div>
+            <div class="text-[11px] text-t-muted uppercase font-bold mb-1.5">Equipped</div>
+            <div class="flex flex-wrap gap-1.5">${sigs.map((s) => icon(s.playStyleId, s.isPlus)).join('')}${equipped.map((id) => icon(id, false)).join('')}</div>
+          </div>` : ''}
+        <p class="text-[11px] text-t-disabled text-center">Select an attribute to edit it here.</p>
+      </div>`;
   }
   function attrEditor(d) {
     let attr = C.findAttr(d.categories, ui.selectedAttr);
@@ -255,13 +330,13 @@
       ${panelHead(attrName(attr.id) + (attr.isKeyAttribute ? ' ★' : ''))}
       <div class="p-4 space-y-4">
         <div class="flex items-end justify-between">
-          <div><div class="text-xs text-t-muted uppercase">Current</div><div class="text-4xl font-bold" style="color:${C.barColor(attr.currentValue)}">${attr.currentValue}</div></div>
+          <div><div class="text-xs text-t-muted uppercase">Current</div><div id="attr-readout" class="text-4xl font-bold" style="color:${C.barColor(attr.currentValue)}">${attr.currentValue}</div></div>
           <div class="text-right text-sm text-t-muted"><div>Base ${attr.baseValue}</div><div>Max ${attr.maxValue}</div><div class="uppercase text-xs mt-1">tier ${attr.tier.replace('tier', '').replace('star', '★')}</div></div>
         </div>
         <div class="flex items-center gap-2">
-          <button data-attr-dec class="flex-1 py-2 rounded-lg font-bold ${atMin ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}" ${atMin ? 'disabled' : ''}>−</button>
-          <input data-attr-range type="range" min="${attr.baseValue}" max="${attr.maxValue}" value="${attr.currentValue}" class="flex-[3] accent-btn-blue" />
-          <button data-attr-inc class="flex-1 py-2 rounded-lg font-bold ${atMax || !canAfford ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-btn-blue hover:bg-btn-blue-hover text-white'}" ${atMax || !canAfford ? 'disabled' : ''}>+</button>
+          <button data-attr-dec aria-label="Decrease ${esc(attrName(attr.id))}" class="flex-1 py-2 rounded-lg font-bold ${atMin ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}" ${atMin ? 'disabled' : ''}>−</button>
+          <input data-attr-range type="range" aria-label="${esc(attrName(attr.id))}" min="${attr.baseValue}" max="${attr.maxValue}" value="${attr.currentValue}" class="flex-[3] accent-btn-blue" />
+          <button data-attr-inc aria-label="Increase ${esc(attrName(attr.id))}" class="flex-1 py-2 rounded-lg font-bold ${atMax || !canAfford ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-btn-blue hover:bg-btn-blue-hover text-white'}" ${atMax || !canAfford ? 'disabled' : ''}>+</button>
         </div>
         <div class="text-center text-xs ${!atMax && !canAfford ? 'text-state-error' : 'text-t-muted'}">${atMax ? 'At maximum' : !canAfford ? `Not enough AP (need ${nextCost})` : `Next +1 costs <span class="font-bold text-accent-light">${nextCost} AP</span>`}</div>
         <div class="flex gap-2">
@@ -279,8 +354,8 @@
   function modalShell(title, bodyHtml) {
     return `
       <div class="flex items-center justify-between p-4 sm:p-5 border-b border-b-primary flex-shrink-0">
-        <h2 class="text-xl sm:text-2xl font-bold text-white tracking-wider uppercase">${esc(title)}</h2>
-        <button data-modal-close class="w-9 h-9 flex items-center justify-center rounded-lg bg-app-card hover:bg-b-primary text-t-muted text-lg transition-colors">✕</button>
+        <h2 id="modal-title" class="text-xl sm:text-2xl font-bold text-white tracking-wider uppercase">${esc(title)}</h2>
+        <button data-modal-close aria-label="Close ${esc(title)}" class="w-11 h-11 flex items-center justify-center rounded-lg bg-app-card hover:bg-b-primary text-t-muted text-lg transition-colors">✕</button>
       </div>
       <div class="overflow-y-auto p-4 sm:p-6">${bodyHtml}</div>`;
   }
@@ -294,9 +369,10 @@
     else if (ui.modal === 'facilities') { title = L.tabs.facilities; body = facilitiesModal(d); }
     else if (ui.modal === 'optimize') { title = 'Optimize Overall'; body = optimizeModal(d); }
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
-    else if (ui.modal === 'utplayers') { title = 'Atletas UT'; body = utPlayersModal(d); }
+    else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
     box.innerHTML = modalShell(title, body);
     root.classList.remove('hidden'); root.classList.add('flex');
+    if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus devolve depois se havia um campo
   }
 
   // ---- Body modal ----
@@ -309,7 +385,7 @@
           <span class="text-sm font-medium text-t-secondary">${esc(label)}</span>
           <span class="font-bold text-white"><span data-readout="${kind}">${value}</span> ${unit}</span>
         </div>
-        <input data-body="${kind}" type="range" min="${min}" max="${max}" value="${value}" class="w-full accent-btn-blue" />
+        <input data-body="${kind}" type="range" aria-label="${esc(label)}" min="${min}" max="${max}" value="${value}" class="w-full accent-btn-blue" />
         <div class="flex justify-between text-[10px] text-t-disabled mt-0.5"><span>${min}</span><span>${max}</span></div>
       </div>`;
     const affRow = (id) => { const v = d.bodyAdj[id] || 0, cv = C.curVal(d.categories, id), eff = d.effective[id]; const width = ((eff - 1) / 98) * 100;
@@ -340,7 +416,7 @@
     const sigCell = (s) => {
       const id = s.playStyleId; if (!id) return '';
       const icon = `${s.isPlus ? 'playstyles/plus/' : 'playstyles/'}${psIcon(id)}`;
-      return `<div class="bg-app-bg border ${s.specialization ? 'border-feat-special' : 'border-b-primary'} rounded-xl p-3 flex flex-col items-center gap-1.5 relative">
+      return `<div title="${esc(psDesc(id))}" class="bg-app-bg border ${s.specialization ? 'border-feat-special' : 'border-b-primary'} rounded-xl p-3 flex flex-col items-center gap-1.5 relative">
         ${s.specialization ? '<span class="absolute top-1 right-1 text-[9px] px-1 rounded bg-feat-special text-white font-bold">SPEC</span>' : ''}
         <img src="${icon}" alt="" class="w-12 h-12 object-contain" />
         <span class="text-xs text-center text-t-secondary font-medium leading-tight">${esc(psName(id))}${s.isPlus ? '+' : ''}</span>
@@ -348,50 +424,57 @@
       </div>`;
     };
 
-    // PLAYSTYLES (9 slots por nível) + lista de elegíveis
-    const unlockedSlotCount = D.slotUnlockLevels.filter((level) => build.level >= level).length;
+    // SLOTS (9 por nível) — clicar num slot vazio abre o seletor; clicar num cheio libera o slot.
+    const unlockedSlotCount = d.slots.unlocked;
+    const equippedCount = build.playstyles.length;
+    const freeSlots = Math.max(0, unlockedSlotCount - equippedCount);
     const slotCells = D.slotUnlockLevels.map((lvl, i) => {
-      const unlocked = build.level >= lvl;
       const id = build.playstyles[i];
-      if (id) { const icon = `playstyles/${psIcon(id)}`;
-        return `<div class="bg-btn-blue/20 border border-state-info rounded-xl p-2 flex flex-col items-center gap-1"><img src="${icon}" class="w-9 h-9 object-contain" /><span class="text-[10px] text-center text-white leading-tight">${esc(psName(id))}</span></div>`; }
-      if (unlocked) return `<div class="bg-app-bg border border-dashed border-b-secondary rounded-xl p-2 flex flex-col items-center justify-center min-h-[64px] text-t-muted"><span class="text-2xl leading-none">+</span><span class="text-[9px]">${esc(L.playStyles.slot)}</span></div>`;
-      return `<div class="bg-app-bg/40 border border-b-primary rounded-xl p-2 flex flex-col items-center justify-center min-h-[64px] text-t-disabled"><span>🔒</span><span class="text-[9px]">Lvl ${lvl}</span></div>`;
+      if (id) return `<button data-ps-slot="${i}" title="Remove ${esc(psName(id))} from slot ${i + 1}" class="ps-slot ps-slot-filled">
+        <img src="playstyles/${psIcon(id)}" alt="" />
+        <span class="ps-slot-name">${esc(psName(id))}</span>
+        <span class="ps-slot-x" aria-hidden="true">✕</span></button>`;
+      if (build.level >= lvl) return `<button data-ps-slot="${i}" title="Choose a PlayStyle for slot ${i + 1}" class="ps-slot ps-slot-empty">
+        <span class="ps-slot-plus">+</span><span class="ps-slot-hint">${esc(L.playStyles.slot)}</span></button>`;
+      return `<div class="ps-slot ps-slot-locked" title="Unlocks at level ${lvl}"><span class="ps-slot-plus">🔒</span><span class="ps-slot-hint">Lvl ${lvl}</span></div>`;
     }).join('');
 
-    const equippedCount = build.playstyles.length;
+    // seletor: só o que já está desbloqueado e ainda não equipado
+    const pickable = D.playstyles.filter((p) => !unlocks.has(p.id) && !build.playstyles.includes(p.id)
+      && C.playstyleEligible(p, d.purchased, unlocks));
+    const picker = !ui.psPicker ? '' : `
+      <div class="ps-picker">
+        <div class="ps-picker-head">
+          <span>Choose a PlayStyle <span class="ps-picker-count">${pickable.length} unlocked · ${freeSlots} slot${freeSlots === 1 ? '' : 's'} free</span></span>
+          <button data-ps-picker-close class="ps-picker-close" aria-label="Close picker">✕</button>
+        </div>
+        ${pickable.length
+          ? `<div class="ps-picker-grid">${pickable.map((p) => `<button data-ps-pick="${p.id}" title="${esc(psDesc(p.id))}" class="ps-pick">
+              <img src="playstyles/${p.iconFileName}" alt="" />
+              <span class="ps-pick-name">${esc(psName(p.id))}</span></button>`).join('')}</div>`
+          : `<p class="ps-picker-empty">Nothing unlocked yet — meet a PlayStyle's requirements below (or use Quick Unlock) and it will appear here.</p>`}
+      </div>`;
+
     const byCat = {};
     D.playstyles.forEach((p) => { (byCat[p.category] = byCat[p.category] || []).push(p); });
-    const psPick = (p) => {
+    const psRow = (p) => {
       const automatic = unlocks.has(p.id);
       const eligible = C.playstyleEligible(p, d.purchased, unlocks);
       const on = build.playstyles.includes(p.id);
-      const canAdd = equippedCount < unlockedSlotCount;
-      const canToggle = on || (!automatic && eligible && canAdd);
       const unlockPlan = C.requirementUnlockPlan(p, d.categories);
       const canAffordUnlock = unlockPlan.feasible && unlockPlan.cost <= d.ap.available;
       const reqText = (p.requirements || []).map((r) => `${attrName(r.attributeId)} ${r.minValue}`).join(' · ');
-      let action = '';
-      if (automatic) {
-        action = '<span class="px-2 text-[9px] font-bold text-state-success">FAC</span>';
-      } else if (on) {
-        action = '<span class="px-2 text-[9px] font-bold text-state-info">EQUIPPED</span>';
-      } else if (eligible && !canAdd) {
-        action = '<span class="px-2 text-[9px] font-bold text-t-disabled">SLOTS FULL</span>';
-      } else if (!eligible && !unlockPlan.feasible) {
-        action = '<span class="px-2 text-[9px] font-bold text-state-error">UNAVAILABLE</span>';
-      } else if (!eligible && !canAdd) {
-        action = '<span class="px-2 text-[9px] font-bold text-t-disabled">SLOTS FULL</span>';
-      } else if (!eligible) {
-        action = `<button data-ps-unlock="${p.id}" data-cost="${unlockPlan.cost}" ${canAffordUnlock ? '' : 'disabled'} title="${canAffordUnlock ? `Raise requirements and equip ${esc(psName(p.id))}` : `Need ${unlockPlan.cost} AP`}" class="flex-shrink-0 px-2 py-1.5 rounded-md text-[9px] leading-tight font-bold ${canAffordUnlock ? 'bg-btn-purple hover:bg-btn-purple-hover text-white' : 'bg-app-card text-t-disabled cursor-not-allowed'}"><span class="hidden sm:inline">QUICK </span>UNLOCK<br><span>${unlockPlan.cost} AP</span></button>`;
-      } else {
-        action = '<span class="px-2 text-[9px] font-bold text-state-success">READY</span>';
-      }
-      return `<div class="flex items-center gap-1 rounded-lg border transition-all ${on ? 'bg-btn-blue/20 border-state-info' : automatic ? 'bg-state-success/10 border-state-success/40' : eligible ? 'bg-app-bg border-b-primary' : 'bg-app-bg/60 border-b-primary'}">
-        <button data-ps="${p.id}" ${canToggle ? '' : 'disabled'} class="min-w-0 flex-1 text-left flex items-center gap-2 p-2 rounded-lg ${canToggle ? 'hover:bg-app-card' : 'cursor-default'}">
-          <img src="playstyles/${p.iconFileName}" class="w-7 h-7 object-contain flex-shrink-0 ${!eligible && !on ? 'grayscale opacity-60' : ''}" />
-          <span class="min-w-0"><span class="block text-xs font-bold ${on ? 'text-white' : 'text-t-secondary'} truncate">${esc(psName(p.id))}</span><span class="block text-[9px] text-t-muted truncate">${esc(reqText)}</span></span>
-        </button>
+      let action;
+      if (automatic) action = '<span class="ps-tag ps-tag-fac">FACILITY</span>';
+      else if (on) action = `<span class="ps-tag ps-tag-on">SLOT ${build.playstyles.indexOf(p.id) + 1}</span>`;
+      else if (eligible) action = '<span class="ps-tag ps-tag-ready">UNLOCKED</span>';
+      else if (!unlockPlan.feasible) action = '<span class="ps-tag ps-tag-off">UNAVAILABLE</span>';
+      else action = `<button data-ps-unlock="${p.id}" data-cost="${unlockPlan.cost}" ${canAffordUnlock ? '' : 'disabled'} title="${canAffordUnlock ? `Raise ${esc(psName(p.id))} requirements for ${unlockPlan.cost} AP` : `Need ${unlockPlan.cost} AP`}" class="ps-unlock">
+        <span class="hidden sm:inline">QUICK </span>UNLOCK<br><span>${unlockPlan.cost} AP</span></button>`;
+      const state = on ? 'is-on' : automatic ? 'is-fac' : eligible ? 'is-ready' : '';
+      return `<div class="ps-row ${state}" title="${esc(psDesc(p.id))}">
+        <img src="playstyles/${p.iconFileName}" alt="" class="ps-row-icon ${!eligible && !on && !automatic ? 'is-locked' : ''}" />
+        <span class="ps-row-main"><span class="ps-row-name">${esc(psName(p.id))}</span><span class="ps-row-req">${esc(reqText || 'No requirements')}</span></span>
         ${action}
       </div>`;
     };
@@ -405,10 +488,18 @@
           <p class="text-[11px] text-t-disabled mt-2">Replace a signature slot in the Specializations tab.</p>
         </div>
         <div>
-          <div class="flex items-center justify-between mb-3"><h3 class="text-white font-bold tracking-wider">${esc(L.playStyles.available)}</h3><span class="text-sm ${equippedCount > unlockedSlotCount ? 'text-state-error' : 'text-t-muted'}">${equippedCount} / ${unlockedSlotCount}</span></div>
-          <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">${slotCells}</div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-white font-bold tracking-wider">PlayStyle Slots</h3>
+            <span class="text-sm ${equippedCount > unlockedSlotCount ? 'text-state-error' : 'text-t-muted'}">${equippedCount} / ${unlockedSlotCount} used</span>
+          </div>
+          <div class="ps-slot-grid">${slotCells}</div>
+          ${picker}
+          <p class="text-[11px] text-t-disabled mt-2">Click an empty slot to pick a PlayStyle · click a filled slot to free it. Quick Unlock only buys the requirements.</p>
+        </div>
+        <div>
+          <h3 class="text-white font-bold tracking-wider mb-3">${esc(L.playStyles.available)}</h3>
           <div class="space-y-3 max-h-[34vh] overflow-y-auto pr-1">
-            ${Object.keys(byCat).map((cat) => `<div><div class="text-[11px] text-t-muted uppercase mb-1.5 font-bold">${esc(catName(cat))}</div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">${byCat[cat].map(psPick).join('')}</div></div>`).join('')}
+            ${Object.keys(byCat).map((cat) => `<div><div class="text-[11px] text-t-muted uppercase mb-1.5 font-bold">${esc(catName(cat))}</div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">${byCat[cat].map(psRow).join('')}</div></div>`).join('')}
           </div>
         </div>
         <div>
@@ -474,7 +565,14 @@
         const lv = f.levels[i];
         const wouldCost = lv.cost - (f.levels[star] ? f.levels[star].cost : 0);
         const over = i > star && wouldCost > remaining;
-        stars.push(`<button data-fac="${f.id}" data-fac-kind="${kind}" data-star="${i}" ${over ? 'disabled' : ''} class="px-2 py-1 rounded text-xs font-bold transition-colors ${i === star ? 'bg-btn-blue text-white' : over ? 'bg-app-bg text-t-disabled cursor-not-allowed' : 'bg-app-bg text-t-muted hover:bg-app-card'}">${i === 0 ? '—' : '★'.repeat(i)}</button>`);
+        const active = i === star;
+        // "—" é ausência de upgrade: pintar de azul fazia parecer que estava comprado
+        const cls = active && star > 0 ? 'bg-btn-blue text-white'
+          : active ? 'bg-app-card text-t-secondary'
+          : over ? 'bg-app-bg text-t-disabled cursor-not-allowed'
+          : 'bg-app-bg text-t-muted hover:bg-app-card';
+        const tip = i === 0 ? 'Not purchased' : `${lv.cost} total · ${wouldCost >= 0 ? '+' : ''}${wouldCost} now${over ? ' — over budget' : ''}`;
+        stars.push(`<button data-fac="${f.id}" data-fac-kind="${kind}" data-star="${i}" ${over ? 'disabled' : ''} aria-pressed="${active}" aria-label="${esc(f.name)}: ${i === 0 ? 'no upgrade' : i + ' star'}" title="${esc(tip)}" class="px-2 py-1 rounded text-xs font-bold transition-colors ${cls}">${i === 0 ? '—' : '★'.repeat(i)}</button>`);
       }
       const unlocked = kind === 'player' && f.levels[star] && f.levels[star].playstyle;
       return `
@@ -489,10 +587,10 @@
       <div class="space-y-3">
         <div class="flex items-center justify-between gap-2 sticky top-0 bg-app-bg pb-2">
           <div class="flex items-center gap-2">
-            <select id="club-level" class="bg-app-card border border-b-primary rounded px-2 py-1.5 text-sm text-white focus:outline-none">${clubOpts}</select>
+            <select id="club-level" aria-label="Club level" class="bg-app-card border border-b-primary rounded px-2 py-1.5 text-sm text-white">${clubOpts}</select>
             <div class="flex p-0.5 rounded-lg bg-app-card border border-b-primary">
-              <button data-fac-view="player" class="px-3 py-1 rounded-md text-xs font-bold ${kind === 'player' ? 'bg-btn-blue text-white' : 'text-t-muted hover:text-white'}">Player</button>
-              <button data-fac-view="ai" class="px-3 py-1 rounded-md text-xs font-bold ${kind === 'ai' ? 'bg-btn-blue text-white' : 'text-t-muted hover:text-white'}">AI</button>
+              <button data-fac-view="player" aria-pressed="${kind === 'player'}" class="px-3 py-1 rounded-md text-xs font-bold ${kind === 'player' ? 'bg-btn-blue text-white' : 'text-t-muted hover:text-white'}">Player</button>
+              <button data-fac-view="ai" aria-pressed="${kind === 'ai'}" class="px-3 py-1 rounded-md text-xs font-bold ${kind === 'ai' ? 'bg-btn-blue text-white' : 'text-t-muted hover:text-white'}">AI</button>
             </div>
           </div>
           <div class="text-right leading-tight"><div class="text-xs text-t-muted uppercase">${esc(L.facilities.remainingBudget)}</div><div class="font-bold ${remClass}">${remaining} <span class="text-t-disabled text-xs">/ ${d.facilities.budget}</span></div><div class="text-[9px] text-t-disabled">Player ${d.facilities.playerCost} · AI ${d.facilities.aiCost}</div></div>
@@ -514,7 +612,7 @@
     }
     const chip = (id) => {
       const off = build.disabledAttrs.includes(id);
-      return `<button data-disable-attr="${id}" class="opt-chip ${off ? 'opt-attr-off' : ''}">${esc(attrName(id))}</button>`;
+      return `<button data-disable-attr="${id}" aria-pressed="${!off}" class="opt-chip ${off ? 'opt-attr-off' : ''}">${esc(attrName(id))}</button>`;
     };
     return `
       <div class="space-y-5 max-w-2xl">
@@ -523,13 +621,13 @@
           <label class="block bg-app-bg border border-b-primary rounded-xl p-3 cursor-pointer">
             <div class="flex items-center gap-2 mb-2"><input type="radio" name="opt-mode" value="max" checked class="accent-btn-blue" /><span class="font-bold text-white">${multi ? 'Maximize lowest overall' : 'Maximize overall'} — given AP</span></div>
             <div class="flex items-center gap-2 pl-6"><span class="text-sm text-t-muted">Additional AP to spend:</span>
-              <input id="opt-ap" type="number" min="0" value="${remaining}" class="w-28 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center focus:outline-none" /></div>
+              <input id="opt-ap" type="number" min="0" value="${remaining}" aria-label="Additional AP to spend" class="w-28 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center" /></div>
             <div class="text-[11px] text-t-disabled pl-6 mt-1">You have ${remaining} AP remaining at level ${build.level}.</div>
           </label>
           <label class="block bg-app-bg border border-b-primary rounded-xl p-3 cursor-pointer">
             <div class="flex items-center gap-2 mb-2"><input type="radio" name="opt-mode" value="min" class="accent-btn-blue" /><span class="font-bold text-white">Minimum AP — given overall</span></div>
             <div class="flex items-center gap-2 pl-6"><span class="text-sm text-t-muted">Target overall${multi ? ' (selected position set)' : ''}:</span>
-              <input id="opt-ovr" type="number" min="1" max="99" value="85" class="w-20 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center focus:outline-none" /></div>
+              <input id="opt-ovr" type="number" min="1" max="99" value="85" aria-label="Target overall" class="w-20 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center" /></div>
           </label>
         </div>
         <div>
@@ -582,8 +680,15 @@
     if (mode === 'max') {
       msg = `${build.positions.length > 1 ? 'Lowest Est. OVR' : 'Est. OVR'} → ${res.overall} · spent ${res.spent} AP · ${proof}`;
     } else {
+      let over = '';
+      if (res.feasible && res.spent > remaining) {
+        const need = d.ap.spent + res.spent;
+        let lvl = build.level;
+        while (lvl < D.maxLevel && C.totalAP(lvl) < need) lvl++;
+        over = ` (over budget by ${res.spent - remaining} — needs level ${C.totalAP(lvl) >= need ? lvl : D.maxLevel + '+'})`;
+      }
       msg = res.feasible
-        ? `Est. OVR ${opts.targetOverall} reached · needs ${res.spent} AP${res.spent > remaining ? ` (over budget by ${res.spent - remaining} — raise level)` : ''} · ${proof}`
+        ? `Est. OVR ${opts.targetOverall} reached · needs ${res.spent} AP${over} · ${proof}`
         : `Target ${opts.targetOverall} unreachable; best is OVR ${res.overall}`;
     }
     if (!res.feasible || res.spent > remaining) return toast(msg);
@@ -615,7 +720,7 @@
     const considered = sumConsidered(d);
     const chip = (id) => {
       const off = build.sumExcluded.includes(id);
-      return `<button data-sum-attr="${id}" class="opt-chip ${off ? 'opt-attr-off' : ''}">${esc(attrName(id))}</button>`;
+      return `<button data-sum-attr="${id}" aria-pressed="${!off}" class="opt-chip ${off ? 'opt-attr-off' : ''}">${esc(attrName(id))}</button>`;
     };
     const included = considered.filter((id) => !build.sumExcluded.includes(id)).length;
     return `
@@ -623,7 +728,7 @@
         <p class="text-sm text-t-muted">Distributes AP to <span class="text-white font-bold">maximize the total</span> of the chosen attributes — buys the cheapest points first (each archetype has its own per-attribute AP costs).</p>
         <div class="flex items-center gap-2">
           <span class="text-sm text-t-secondary font-medium">AP to spend:</span>
-          <input id="sum-ap" type="number" min="0" value="${remaining}" class="w-28 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center focus:outline-none" />
+          <input id="sum-ap" type="number" min="0" value="${remaining}" aria-label="AP to spend" class="w-28 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center" />
           <span class="text-[11px] text-t-disabled">${remaining} remaining at level ${build.level}</span>
         </div>
         <div>
@@ -675,61 +780,98 @@
       .finally(() => { ui.utLoading = false; if (ui.modal === 'utplayers') render(); });
   }
   const utImage = (p) => p.cardImagePath ? `https://game-assets.fut.gg/${p.cardImagePath}` : '';
-  function utCost(player, d) {
-    return d.arch ? C.targetPlan(d, player.attributes) : { cost: 0, capped: 0, values: {} };
+  // targetPlan depende só do archetype (base/max/tier por atributo), nunca dos valores atuais —
+  // então dá pra calcular uma vez por jogador em vez de 4k+ planos a cada tecla digitada.
+  function utPlan(player, d) {
+    if (!d.arch) return { cost: 0, capped: 0, values: {} };
+    const cache = ui.utPlanCache && ui.utPlanCache.archetypeId === d.arch.id
+      ? ui.utPlanCache
+      : (ui.utPlanCache = { archetypeId: d.arch.id, byPlayer: new Map() });
+    let plan = cache.byPlayer.get(player.id);
+    if (!plan) { plan = C.targetPlan(d, player.attributes); cache.byPlayer.set(player.id, plan); }
+    return plan;
   }
   function utBuildable(player, d) {
-    const c = utCost(player, d);
-    return { ...c, buildable: c.cost <= d.ap.total };
+    const plan = utPlan(player, d);
+    return { ...plan, buildable: plan.cost <= d.ap.total };
   }
   function utPlayersModal(d) {
     ensureUtPlayers();
-    if (ui.utLoading) return `<div class="p-8 text-center text-t-muted">Loading UT athletes...</div>`;
-    if (ui.utError) return `<div class="p-8 text-center text-state-error">Could not load UT athletes: ${esc(ui.utError)}</div>`;
-    const rows = ui.utPlayers || [];
-    const q = ui.utQuery.trim().toLowerCase();
-    const filtered = q
-      ? rows.filter((p) => p.name.toLowerCase().includes(q) || p.positions.join(' ').toLowerCase().includes(q) || String(p.overall) === q)
-      : rows;
+    if (ui.utLoading) return `<div class="p-8 text-center text-t-muted">Loading UT players…</div>`;
+    if (ui.utError) return `<div class="p-8 text-center text-state-error">Could not load UT players: ${esc(ui.utError)}</div>`;
+    // Um archetype de linha não compra atributos de goleiro (e vice-versa), então cartas fora da
+    // família de posições do archetype seriam aplicadas pela metade — melhor nem listar.
+    const allowed = d.arch && d.arch.position === 'GK' ? ['GK'] : OUTFIELD_POSITIONS;
+    const rows = (ui.utPlayers || []).filter((p) => p.positions.some((x) => allowed.includes(x)));
     const totalAP = d.ap.total;
+    const q = ui.utQuery.trim().toLowerCase();
+    const picked = ui.utPositions.filter((x) => allowed.includes(x));
+    const matches = rows.filter((p) => {
+      if (picked.length && !p.positions.some((x) => picked.includes(x))) return false;
+      if (ui.utOnlyBuildable && utPlan(p, d).cost > totalAP) return false;
+      if (!q) return true;
+      return p.name.toLowerCase().includes(q) || p.positions.join(' ').toLowerCase().includes(q) || String(p.overall) === q;
+    });
+    const buildableCount = matches.reduce((n, p) => n + (utPlan(p, d).cost <= totalAP ? 1 : 0), 0);
+    const shown = matches.slice(0, UT_RENDER_LIMIT);
+
+    const posChips = [`<button data-ut-pos="all" aria-pressed="${!picked.length}" class="ut-chip ${picked.length ? '' : 'is-on'}">All</button>`]
+      .concat(allowed.map((p) => `<button data-ut-pos="${p}" aria-pressed="${picked.includes(p)}" class="ut-chip ${picked.includes(p) ? 'is-on' : ''}">${p}</button>`))
+      .join('');
     const card = (p) => {
       const info = utBuildable(p, d);
       const status = `${info.cost} AP${info.capped ? ` · cap ${info.capped}` : ''}`;
-      const stateClass = info.buildable ? 'ut-card-buildable' : 'ut-card-locked';
       return `
-        <button data-ut-player="${p.id}" ${info.buildable ? '' : 'disabled'} class="ut-card ${stateClass}">
+        <button data-ut-player="${p.id}" ${info.buildable ? '' : 'disabled'} class="ut-card ${info.buildable ? 'ut-card-buildable' : 'ut-card-locked'}"
+          title="${esc(p.name)} · ${esc(p.positions.join(' / '))} · ${info.cost} AP of ${totalAP} available${info.capped ? ` · ${info.capped} attribute(s) capped by the archetype` : ''}">
           <div class="ut-card-img">${p.cardImagePath ? `<img loading="lazy" src="${esc(utImage(p))}" alt="" />` : ''}</div>
           <span class="ut-ovr">${p.overall}</span>
-          <div class="ut-card-main">
-            <span class="ut-name">${esc(p.name)}</span>
-          </div>
+          <div class="ut-card-main"><span class="ut-name">${esc(p.name)}</span></div>
           <div class="ut-pos">${esc(p.positions.join(' / '))}</div>
           <div class="ut-cost ${info.buildable ? 'text-state-success' : 'text-t-disabled'}">${esc(status)}</div>
         </button>`;
     };
-    const buildableCount = filtered.reduce((n, p) => n + (utBuildable(p, d).buildable ? 1 : 0), 0);
+    const list = shown.length
+      ? `<div class="ut-list-head"><span></span><span>OVR</span><span>Player</span><span>Pos</span><span>Cost</span></div>
+         <div class="ut-list">${shown.map(card).join('')}</div>
+         ${matches.length > shown.length ? `<p class="ut-more">Showing the first ${shown.length} of ${matches.length} — narrow it down with the search or the position filter.</p>` : ''}`
+      : `<p class="ut-empty">No player matches these filters.${ui.utOnlyBuildable ? ' Try “All” to include players you cannot afford yet.' : ''}</p>`;
+
     return `
-      <div class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="text-sm text-t-muted">Showing <span class="text-white font-bold">${filtered.length}</span> athletes 80+ · buildable with level ${build.level}: <span class="text-state-success font-bold">${buildableCount}</span> · AP total <span class="text-white font-bold">${totalAP}</span></div>
-          <input id="ut-search" type="search" value="${esc(ui.utQuery)}" placeholder="Search name, position, OVR"
-            class="w-full sm:w-72 px-3 py-2 bg-app-card border border-b-primary rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-accent" />
+      <div class="space-y-3">
+        <div class="ut-toolbar">
+          <div class="ut-chips">${posChips}</div>
+          <div class="flex items-center gap-2">
+            <div class="seg">
+              <button data-ut-only="1" aria-pressed="${ui.utOnlyBuildable}" class="${ui.utOnlyBuildable ? 'is-on' : ''}" title="Only players you can afford at level ${build.level}">Buildable</button>
+              <button data-ut-only="0" aria-pressed="${!ui.utOnlyBuildable}" class="${ui.utOnlyBuildable ? '' : 'is-on'}" title="Every player in the 80+ dataset">All</button>
+            </div>
+            <input id="ut-search" type="search" value="${esc(ui.utQuery)}" placeholder="Search name, position, OVR"
+              class="ut-search" />
+          </div>
         </div>
-        <div class="ut-list-head"><span></span><span>OVR</span><span>Player</span><span>Pos</span><span>Cost</span></div>
-        <div class="ut-list">${filtered.map(card).join('')}</div>
+        <div class="text-sm text-t-muted">
+          <span class="text-white font-bold">${matches.length}</span> player${matches.length === 1 ? '' : 's'} listed ·
+          buildable at level ${build.level}: <span class="text-state-success font-bold">${buildableCount}</span> ·
+          AP total <span class="text-white font-bold">${totalAP}</span>
+        </div>
+        ${list}
       </div>`;
   }
 
   // -------------------- mutações --------------------
   function setArchetype(id) {
     const arch = C.archetype(id);
-    commitBuildChange(() => {
+    const hadWork = Object.keys(build.attributes).length || build.playstyles.length
+      || Object.keys(build.facilities).length || Object.keys(build.aiFacilities).length;
+    const outcome = commitBuildChange(() => {
       build.archetypeId = id;
       build.attributes = {}; build.facilities = {}; build.aiFacilities = {}; build.playstyles = []; build.signatures = {};
       build.height = C.clamp(build.height, Math.ceil(arch.minHeight), Math.floor(arch.maxHeight));
       build.weight = C.clamp(build.weight, Math.ceil(arch.minWeight), Math.floor(arch.maxWeight));
       ui.selectedAttr = null;
     });
+    if (outcome.changed && hadWork) toast('Archetype changed — attributes, facilities and PlayStyles reset · Ctrl+Z to undo');
   }
   function adjustAttr(id, delta, mode) {
     const d = C.derive(build);
@@ -746,17 +888,23 @@
       if (v === attr.baseValue) delete build.attributes[id]; else build.attributes[id] = v;
     });
   }
-  function togglePlaystyle(id) {
+  // Equipar é sempre explícito: o usuário clica um slot e escolhe. Quick Unlock só compra requisitos.
+  function equipPlaystyle(id) {
     const d = C.derive(build);
-    commitBuildChange(() => {
-      const i = build.playstyles.indexOf(id);
-      if (i >= 0) build.playstyles.splice(i, 1);
-      else {
-        const ps = C.playstyle(id);
-        const max = D.slotUnlockLevels.filter((l) => build.level >= l).length;
-        if (ps && !d.facilities.unlocks.has(id) && C.playstyleEligible(ps, d.purchased, d.facilities.unlocks) && build.playstyles.length < max) build.playstyles.push(id);
-      }
-    });
+    const ps = C.playstyle(id);
+    if (!ps) return;
+    if (d.facilities.unlocks.has(id)) return toast('Granted by a Facility — it does not use a slot.');
+    if (build.playstyles.includes(id)) return toast('Already equipped.');
+    if (!C.playstyleEligible(ps, d.purchased, d.facilities.unlocks)) return toast('Requirements not met yet.');
+    if (build.playstyles.length >= d.slots.unlocked) return toast('No free PlayStyle slot.');
+    commitBuildChange(() => { build.playstyles.push(id); ui.psPicker = false; });
+    toast(`${psName(id)} equipped`);
+  }
+  function unequipPlaystyle(id) {
+    const i = build.playstyles.indexOf(id);
+    if (i < 0) return;
+    commitBuildChange(() => { build.playstyles.splice(i, 1); });
+    toast(`${psName(id)} removed`);
   }
   function setFacility(id, star, kind) {
     commitBuildChange(() => {
@@ -790,24 +938,25 @@
     const d = C.derive(build);
     if (d.facilities.unlocks.has(playstyleId)) return toast('This PlayStyle is already granted by a Facility.');
     if (build.playstyles.includes(playstyleId)) return toast('This PlayStyle is already equipped.');
-    const slots = D.slotUnlockLevels.filter((level) => build.level >= level).length;
-    if (build.playstyles.length >= slots) return toast('No available PlayStyle slot.');
     const plan = C.requirementUnlockPlan(ps, d.categories);
     if (!plan.feasible) return toast('This PlayStyle cannot be unlocked with this archetype.');
     if (plan.cost > d.ap.available) return toast(`Not enough AP (need ${plan.cost}, have ${Math.max(0, d.ap.available)})`);
+    // Só compra os requisitos — NÃO ocupa slot. Equipar continua sendo uma escolha do usuário.
     commitBuildChange(() => {
       for (const id of Object.keys(plan.values)) {
         const attr = C.findAttr(d.categories, id);
         if (attr && plan.values[id] > attr.currentValue) build.attributes[id] = plan.values[id];
       }
-      build.playstyles.push(playstyleId);
     });
-    toast(`${psName(playstyleId)} unlocked and equipped · ${plan.cost} AP`);
+    toast(`${psName(playstyleId)} unlocked · ${plan.cost} AP · pick a slot to equip it`);
   }
   function assignSpec(specId, slot) {
-    commitBuildChange(() => {
-      build.signatures = { [slot]: specId };
-    });
+    const specName = (id) => { const s = D.specializations.find((x) => x.id === id); return s ? s.name : id; };
+    const previous = Object.values(build.signatures || {})[0];
+    commitBuildChange(() => { build.signatures = { [slot]: specId }; });
+    toast(previous && previous !== specId
+      ? `Only one Specialization at a time — ${specName(previous)} was replaced`
+      : `${specName(specId)} → signature slot ${slot + 1}`);
   }
   function revertSpec(specId) {
     commitBuildChange(() => {
@@ -836,10 +985,30 @@
     toast(`${player.name} applied · ${info.cost} AP`);
   }
 
+  // O slider de atributo é recriado a cada render, o que mataria o arrasto: durante o arrasto só
+  // atualizamos o número; o valor entra no build (e no histórico) quando o usuário solta.
+  function liveAttrRange(input) {
+    const d = C.derive(build);
+    const attr = C.findAttr(d.categories, ui.selectedAttr);
+    if (!attr) return;
+    const value = C.affordableTarget(attr, d.ap.available, parseInt(input.value, 10) || attr.baseValue);
+    if (String(value) !== input.value) input.value = value;
+    const readout = $('#attr-readout');
+    if (readout) { readout.textContent = value; readout.style.color = C.barColor(value); }
+  }
+
+  // Mesma ideia pro corpo: um arrasto vira UMA entrada de histórico, não vinte.
+  let bodyDragBefore = null;
+  function commitBodyDrag() {
+    if (!bodyDragBefore) return;
+    const before = bodyDragBefore;
+    bodyDragBefore = null;
+    if (rememberBuildChange(before)) render();
+  }
   function liveBody(kind, value) {
-    const before = cloneBuild();
+    if (!bodyDragBefore) bodyDragBefore = cloneBuild();
+    if (build[kind] === value) return;
     build[kind] = value;
-    if (!rememberBuildChange(before)) return;
     const ro = document.querySelector(`[data-readout="${kind}"]`); if (ro) ro.textContent = value;
     const d = C.derive(build);
     renderSummary(d); renderAttributes(d);
@@ -858,8 +1027,9 @@
     const t = $('#toast'); t.firstElementChild.textContent = msg; t.classList.remove('hidden');
     clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 2200);
   }
-  function openModal(id) { ui.modal = id; ui.selectedAttr = null; render(); }
+  function openModal(id) { ui.modal = id; ui.selectedAttr = null; ui.psPicker = false; render(); }
   function closeModal() {
+    commitBodyDrag(); // fechar no meio de um arrasto (Esc) não pode deixar o snapshot pendurado
     if (ui.modal === 'optimize' && ui.optimizeController) {
       ui.optimizeRunId++;
       ui.optimizeController.abort();
@@ -867,6 +1037,7 @@
       ui.optimizing = false;
     }
     ui.modal = null;
+    ui.psPicker = false;
     render();
   }
 
@@ -881,24 +1052,24 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps],[data-ps-unlock],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // clique no backdrop
       if (!t) return;
+      // Os chips são preferência de otimizador, não estado de build: mudam a URL mas não gastam
+      // uma entrada de desfazer (antes, marcar 20 atributos apagava o histórico real).
       if (t.dataset.disableAttr) { // alterna sem re-render (preserva inputs do modal)
-        const before = cloneBuild();
         const id = t.dataset.disableAttr, i = build.disabledAttrs.indexOf(id);
         if (i >= 0) build.disabledAttrs.splice(i, 1); else build.disabledAttrs.push(id);
-        rememberBuildChange(before);
         t.classList.toggle('opt-attr-off');
+        t.setAttribute('aria-pressed', String(!t.classList.contains('opt-attr-off')));
         syncUrl();
         return;
       }
       if (t.dataset.sumAttr) { // alterna inclusão no max-sum (sem re-render)
-        const before = cloneBuild();
         const id = t.dataset.sumAttr, i = build.sumExcluded.indexOf(id);
         if (i >= 0) build.sumExcluded.splice(i, 1); else build.sumExcluded.push(id);
-        rememberBuildChange(before);
         t.classList.toggle('opt-attr-off');
+        t.setAttribute('aria-pressed', String(!t.classList.contains('opt-attr-off')));
         updateSumCount();
         syncUrl();
         return;
@@ -907,19 +1078,15 @@
       if (t.id === 'btn-utplayers') return openModal('utplayers');
       if (t.id === 'sum-run') return runMaxSum();
       if (t.id === 'sum-all') {
-        const before = cloneBuild();
         build.sumExcluded = [];
-        rememberBuildChange(before);
-        document.querySelectorAll('[data-sum-attr]').forEach((c) => c.classList.remove('opt-attr-off'));
+        document.querySelectorAll('[data-sum-attr]').forEach((c) => { c.classList.remove('opt-attr-off'); c.setAttribute('aria-pressed', 'true'); });
         updateSumCount();
         syncUrl();
         return;
       }
       if (t.id === 'sum-none') {
-        const before = cloneBuild();
         build.sumExcluded = sumConsidered(C.derive(build)).slice();
-        rememberBuildChange(before);
-        document.querySelectorAll('[data-sum-attr]').forEach((c) => c.classList.add('opt-attr-off'));
+        document.querySelectorAll('[data-sum-attr]').forEach((c) => { c.classList.add('opt-attr-off'); c.setAttribute('aria-pressed', 'false'); });
         updateSumCount();
         syncUrl();
         return;
@@ -931,14 +1098,37 @@
       if (t.id === 'opt-run') return runOptimize();
       if (t.hasAttribute('data-modal')) return openModal(t.dataset.modal);
       if (t.hasAttribute('data-modal-close')) return closeModal();
-      if (t.hasAttribute('data-attr')) { ui.selectedAttr = ui.selectedAttr === t.dataset.attr ? null : t.dataset.attr; return render(); }
+      if (t.hasAttribute('data-attr')) {
+        ui.selectedAttr = ui.selectedAttr === t.dataset.attr ? null : t.dataset.attr;
+        render();
+        // fora do desktop o painel fica embaixo de toda a grade — sem isso o toque parece não fazer nada
+        if (ui.selectedAttr && !matchMedia('(min-width: 1024px)').matches) $('#panel').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        return;
+      }
       if (t.hasAttribute('data-attr-inc')) return adjustAttr(ui.selectedAttr, +1);
       if (t.hasAttribute('data-attr-dec')) return adjustAttr(ui.selectedAttr, -1);
       if (t.hasAttribute('data-attr-base')) return adjustAttr(ui.selectedAttr, 0, 'base');
       if (t.hasAttribute('data-attr-maximize')) return adjustAttr(ui.selectedAttr, 0, 'max');
       if (t.dataset.psUnlock) return quickUnlockPlaystyle(t.dataset.psUnlock);
-      if (t.dataset.ps) return togglePlaystyle(t.dataset.ps);
-      if (t.dataset.facView) { ui.facilityKind = t.dataset.facView; return renderModal(C.derive(build)); }
+      if (t.dataset.psSlot != null) {
+        const equipped = build.playstyles[+t.dataset.psSlot];
+        if (equipped) return unequipPlaystyle(equipped);
+        ui.psPicker = true;
+        return refreshModal();
+      }
+      if (t.dataset.psPick) return equipPlaystyle(t.dataset.psPick);
+      if (t.hasAttribute('data-ps-picker-close')) { ui.psPicker = false; return refreshModal(); }
+      if (t.dataset.utPos) {
+        const p = t.dataset.utPos;
+        if (p === 'all') ui.utPositions = [];
+        else {
+          const i = ui.utPositions.indexOf(p);
+          if (i >= 0) ui.utPositions.splice(i, 1); else ui.utPositions.push(p);
+        }
+        return refreshModal();
+      }
+      if (t.dataset.utOnly) { ui.utOnlyBuildable = t.dataset.utOnly === '1'; return refreshModal(); }
+      if (t.dataset.facView) { ui.facilityKind = t.dataset.facView; return refreshModal(); }
       if (t.dataset.fac) return setFacility(t.dataset.fac, +t.dataset.star, t.dataset.facKind);
       if (t.dataset.specUnlock) return quickUnlockSpec(t.dataset.specUnlock);
       if (t.dataset.specAssign) return assignSpec(t.dataset.specAssign, +t.dataset.slot);
@@ -948,33 +1138,44 @@
       if (t.id === 'btn-undo') return undoBuild();
       if (t.id === 'btn-redo') return redoBuild();
       if (t.id === 'btn-reset') {
-        if (confirm('Reset all attribute upgrades and selections?')) {
-          commitBuildChange(() => {
-            const a = build.archetypeId;
-            build = defaultBuild();
-            build.archetypeId = a;
-          });
-        }
-        return;
+        if (!confirm('Reset attributes, facilities, PlayStyles and Specializations? Level and club level are kept.')) return;
+        commitBuildChange(() => {
+          const { archetypeId, level, clubLevel } = build;
+          build = Object.assign(defaultBuild(), { archetypeId, level, clubLevel });
+        });
+        return toast('Build reset · Ctrl+Z to undo');
       }
       if (t.id === 'btn-share') return doShare();
       if (t.id === 'btn-image') return doImage();
     });
     document.body.addEventListener('input', (e) => {
       const t = e.target;
-      if (t.id === 'level-input') return commitBuildChange(() => { build.level = C.clamp(parseInt(t.value || '1', 10), 1, D.maxLevel); });
-      if (t.id === 'ut-search') { ui.utQuery = t.value; return renderModal(C.derive(build)); }
+      if (t.id === 'level-input') {
+        // Campo de texto (não number) pra poder devolver o cursor depois do re-render — Chrome
+        // proíbe setSelectionRange em input[type=number] e o cursor voltava pro início a cada tecla.
+        const raw = t.value.replace(/\D/g, '');
+        if (raw !== t.value) t.value = raw;
+        if (!raw) return; // vazio = apagando pra redigitar; só confirma quando há número
+        return commitBuildChange(() => { build.level = C.clamp(parseInt(raw, 10) || 1, 1, D.maxLevel); });
+      }
+      if (t.id === 'ut-search') { ui.utQuery = t.value; return refreshModal(); }
       if (t.dataset.body) return liveBody(t.dataset.body, parseInt(t.value, 10));
-      if (t.hasAttribute('data-attr-range')) return adjustAttr(ui.selectedAttr, parseInt(t.value, 10), 'set');
+      if (t.hasAttribute('data-attr-range')) return liveAttrRange(t);
     });
     document.body.addEventListener('change', (e) => {
       if (e.target.id === 'club-level') return commitBuildChange(() => { build.clubLevel = parseInt(e.target.value, 10); });
+      if (e.target.id === 'level-input') return render(); // devolve o valor normalizado ao sair do campo
+      if (e.target.dataset.body) return commitBodyDrag();
+      if (e.target.hasAttribute('data-attr-range')) return adjustAttr(ui.selectedAttr, parseInt(e.target.value, 10), 'set');
     });
     document.addEventListener('keydown', (e) => {
       const key = e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && key === 'z' && !e.shiftKey) { e.preventDefault(); return undoBuild(); }
-      if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) { e.preventDefault(); return redoBuild(); }
+      // só campos de digitação: com um slider focado Ctrl+Z continua desfazendo o build
+      const typing = e.target.matches && e.target.matches('input:not([type="range"]), textarea, select');
+      if (mod && key === 'z' && !e.shiftKey && !typing) { e.preventDefault(); return undoBuild(); }
+      if (mod && (key === 'y' || (key === 'z' && e.shiftKey)) && !typing) { e.preventDefault(); return redoBuild(); }
+      if (e.key === 'Enter' && e.target.id === 'level-input') return e.target.blur();
       if (e.key === 'Escape' && ui.modal) closeModal();
     });
 

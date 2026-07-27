@@ -28,6 +28,7 @@ window.Calc = (function () {
           maxValue: mod ? mod.maxValue : attr.maxValue,
           tier,
           isKeyAttribute: isKey,
+          displayType: attr.displayType, // 'stars' em skill moves / weak foot (escala 2..5, não 1..99)
         };
       }),
     }));

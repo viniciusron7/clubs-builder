@@ -177,12 +177,13 @@ window.Share = (function () {
         ctx.fillText((a.isKeyAttribute ? '★ ' : '') + attrName(a.id), x + cardPad, ry + 14);
         ctx.textAlign = 'right';
         ctx.fillStyle = C.barColor(val); ctx.font = '700 15px system-ui';
-        ctx.fillText(String(val), x + colW - cardPad, ry + 14);
+        ctx.fillText(a.displayType === 'stars' ? val + '★' : String(val), x + colW - cardPad, ry + 14);
         ctx.textAlign = 'left';
-        // barra
+        // barra — atributos de estrela vão de 1..maxValue (2..5), não de 1..99
+        const span = a.displayType === 'stars' ? Math.max(1, a.maxValue - 1) : 98;
         const bw = colW - cardPad * 2, bx = x + cardPad, by = ry + 20;
         ctx.fillStyle = PAL.track; roundRect(ctx, bx, by, bw, 6, 3); ctx.fill();
-        ctx.fillStyle = C.barColor(val); roundRect(ctx, bx, by, Math.max(2, bw * (val - 1) / 98), 6, 3); ctx.fill();
+        ctx.fillStyle = C.barColor(val); roundRect(ctx, bx, by, Math.max(2, bw * (val - 1) / span), 6, 3); ctx.fill();
         ry += rowH;
       });
     });

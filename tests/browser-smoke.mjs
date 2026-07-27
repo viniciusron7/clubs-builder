@@ -53,6 +53,12 @@ const click = async (selector) => {
   assert.equal(clicked, true, `Missing element: ${selector}`);
   await delay(75);
 };
+const typeText = async (text) => {
+  for (const character of text) {
+    await send('Input.insertText', { text: character });
+    await delay(60);
+  }
+};
 const screenshot = async (file) => {
   const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
   await fs.writeFile(file, Buffer.from(result.data, 'base64'));
@@ -65,6 +71,13 @@ await waitFor(`document.readyState === 'complete' && !!window.Calc && !!window.S
 assert.equal(await evaluate('window.OVERALL_MODEL.version'), 2);
 
 await click('[data-arch="fwd_finisher"]');
+// The LVL field must swallow a whole multi-digit number typed key by key without losing focus.
+await evaluate(`(() => { const el = document.querySelector('#level-input'); el.focus(); el.select(); })()`);
+await typeText('85');
+assert.equal(await evaluate(`document.querySelector('#level-input').value`), '85');
+assert.equal(await evaluate(`Share.fromUrl().level`), 85);
+assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'level-input');
+await evaluate(`document.querySelector('#level-input').blur()`);
 await evaluate(`(() => { const el = document.querySelector('#level-input'); el.value = '100'; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 await delay(75);
 await click('[data-pos="ST"]');
@@ -90,15 +103,28 @@ await click('[data-modal="playStyles"]');
 const playstyleQuickUnlock = await evaluate(`(() => { const button = document.querySelector('[data-ps-unlock]:not([disabled])'); return button ? { id: button.dataset.psUnlock, cost: Number(button.dataset.cost) } : null; })()`);
 assert.ok(playstyleQuickUnlock);
 await click(`[data-ps-unlock="${playstyleQuickUnlock.id}"]`);
-assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), true);
+// Quick Unlock buys the requirements only — it must never consume a slot on its own.
+assert.equal(await evaluate(`Share.fromUrl().playstyles.length`), 0);
 assert.equal(await evaluate(`Calc.derive(Share.fromUrl()).ap.spent`), spentBeforePlaystyleUnlock + playstyleQuickUnlock.cost);
+assert.equal(await evaluate(`(() => { const b = Share.fromUrl(); const d = Calc.derive(b); return Calc.playstyleEligible(Calc.playstyle(${JSON.stringify(playstyleQuickUnlock.id)}), d.purchased, d.facilities.unlocks); })()`), true);
+// Equipping is explicit: click an empty slot, then choose from the picker.
+await click('[data-ps-slot="0"]');
+assert.equal(await evaluate(`!!document.querySelector('.ps-picker')`), true);
+await click(`[data-ps-pick="${playstyleQuickUnlock.id}"]`);
+assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), true);
 await screenshot('/tmp/clubs-builder-playstyles-quick-unlock.png');
-await click('[data-modal-close]');
 await click('#btn-undo');
-assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), buildBeforePlaystyleUnlock);
+assert.equal(await evaluate(`Share.fromUrl().playstyles.length`), 0);
 await click('#btn-redo');
 assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), true);
-await click('#btn-undo');
+// Clicking the filled slot frees it again.
+await click('[data-ps-slot="0"]');
+assert.equal(await evaluate(`Share.fromUrl().playstyles.length`), 0);
+await click('[data-modal-close]');
+await click('#btn-undo'); // undo the unequip
+await click('#btn-undo'); // undo the equip
+await click('#btn-undo'); // undo the quick unlock
+assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), buildBeforePlaystyleUnlock);
 
 await click('[data-modal="facilities"]');
 await click('[data-fac-view="ai"]');
@@ -129,6 +155,29 @@ await waitFor(`document.querySelector('#modal-root').classList.contains('hidden'
 const optimizerToast = await evaluate(`document.querySelector('#toast').innerText`);
 assert.match(optimizerToast, /(optimal|best found)/);
 await screenshot('/tmp/clubs-builder-desktop.png');
+
+// UT players: buildable/all toggle, position filter and a search box that keeps focus while typing.
+await click('#btn-utplayers');
+await waitFor(`!/Loading/.test(document.querySelector('#modal-box').innerText)`, 20000);
+const utBuildableRows = await evaluate(`document.querySelectorAll('.ut-card').length`);
+assert.equal(utBuildableRows > 0, true);
+assert.equal(await evaluate(`document.querySelectorAll('.ut-card-locked').length`), 0);
+await click('[data-ut-only="0"]');
+assert.equal(await evaluate(`document.querySelectorAll('.ut-card-locked').length`) > 0, true);
+await click('[data-ut-only="1"]');
+assert.equal(await evaluate(`document.querySelectorAll('.ut-card').length`), utBuildableRows);
+await click('[data-ut-pos="CB"]');
+assert.equal(await evaluate(`[...document.querySelectorAll('.ut-card .ut-pos')].every((el) => /\\bCB\\b/.test(el.textContent))`), true);
+await click('[data-ut-pos="all"]');
+assert.equal(await evaluate(`document.querySelectorAll('.ut-card').length`), utBuildableRows);
+await evaluate(`document.querySelector('#ut-search').focus()`);
+await typeText('kane');
+assert.equal(await evaluate(`document.querySelector('#ut-search').value`), 'kane');
+assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'ut-search');
+await screenshot('/tmp/clubs-builder-ut-players.png');
+await evaluate(`(() => { const el = document.querySelector('#ut-search'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+await delay(120);
+await click('[data-modal-close]');
 
 await click('[data-arch="gk_shot_stopper"]');
 await evaluate(`(() => { const el = document.querySelector('#level-input'); el.value = '100'; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
