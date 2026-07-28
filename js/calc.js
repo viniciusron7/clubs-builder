@@ -487,9 +487,150 @@ window.Calc = (function () {
     };
   }
 
+  function multiPlanEvaluation(attrs, baseRaws, values) {
+    const raws = baseRaws.slice();
+    attrs.forEach((attr) => {
+      const delta = Math.max(0, (values[attr.id] == null ? attr.val : values[attr.id]) - attr.val);
+      attr.weights.forEach((weight, index) => { raws[index] += delta * weight; });
+    });
+    const overalls = raws.map(overallFromRaw);
+    return {
+      min: overalls.length ? Math.min(...overalls) : 0,
+      sum: overalls.reduce((total, overall) => total + overall, 0),
+    };
+  }
+
+  // Resolve exatamente uma combinação linear dos OVRs. Embora uma única combinação linear
+  // não prove o ótimo max-min discreto, ela produz candidatos Pareto fortes e determinísticos
+  // em O(atributos × AP × opções), sem explodir o espaço multidimensional.
+  function exactWeightedMultiPlan(attrs, budget, coefficients) {
+    const cappedBudget = Math.max(0, Math.floor(budget));
+    let dp = new Float64Array(cappedBudget + 1);
+    dp.fill(-Infinity);
+    dp[0] = 0;
+    const backRows = [];
+    const optionRows = [];
+
+    attrs.forEach((attr) => {
+      const options = upgradeOptions(attr);
+      const scalarOptions = options.map((option) => ({
+        ...option,
+        scalarGain: option.gains.reduce((sum, gain, index) => sum + gain * (coefficients[index] || 0), 0),
+      }));
+      const next = new Float64Array(cappedBudget + 1);
+      next.fill(-Infinity);
+      const back = new Int16Array(cappedBudget + 1);
+      back.fill(-1);
+      for (let currentBudget = 0; currentBudget <= cappedBudget; currentBudget++) {
+        const currentGain = dp[currentBudget];
+        if (currentGain === -Infinity) continue;
+        for (let optionIndex = 0; optionIndex < scalarOptions.length; optionIndex++) {
+          const option = scalarOptions[optionIndex];
+          const nextBudget = currentBudget + option.cost;
+          if (nextBudget > cappedBudget) break;
+          const nextGain = currentGain + option.scalarGain;
+          if (nextGain > next[nextBudget] + OVR_EPS) {
+            next[nextBudget] = nextGain;
+            back[nextBudget] = optionIndex;
+          }
+        }
+      }
+      dp = next;
+      backRows.push(back);
+      optionRows.push(scalarOptions);
+    });
+
+    let chosenBudget = 0;
+    for (let currentBudget = 1; currentBudget <= cappedBudget; currentBudget++) {
+      if (dp[currentBudget] > dp[chosenBudget] + OVR_EPS) chosenBudget = currentBudget;
+    }
+    const values = {};
+    let remainingBudget = chosenBudget;
+    for (let index = attrs.length - 1; index >= 0; index--) {
+      const optionIndex = backRows[index][remainingBudget];
+      if (optionIndex < 0) {
+        return {
+          feasible: true,
+          added: 0,
+          values: Object.fromEntries(attrs.map((attr) => [attr.id, attr.val])),
+        };
+      }
+      const option = optionRows[index][optionIndex];
+      values[attrs[index].id] = option.value == null ? attrs[index].val + option.k : option.value;
+      remainingBudget -= option.cost;
+    }
+    return { feasible: true, added: chosenBudget, values, scalarGain: dp[chosenBudget] };
+  }
+
   function fallbackMultiPlan(attrs, budget, baseRaws, mode, targetOverall) {
-    const plan = fastMaxMinPlan(attrs, budget, baseRaws, mode === 'min' ? targetOverall : null);
-    return { ...plan, status: 'best-found' };
+    const greedyPlan = fastMaxMinPlan(attrs, budget, baseRaws, mode === 'min' ? targetOverall : null);
+    if (mode !== 'max' || !baseRaws.length) return { ...greedyPlan, status: 'best-found' };
+
+    const candidates = [greedyPlan];
+    const equal = baseRaws.map(() => 1);
+    const coefficientSets = [equal];
+    if (baseRaws.length <= 3) {
+      // Duplas precisam de razões mais finas; trios usam a grade simplex completa de
+      // 45 pontos. Isso cobre distribuições não encontradas por "peso igual + um destaque".
+      const total = baseRaws.length === 2 ? 16 : 8;
+      const compose = (remaining, index, values) => {
+        if (index === baseRaws.length - 1) {
+          coefficientSets.push(values.concat(remaining));
+          return;
+        }
+        for (let value = 0; value <= remaining; value++) compose(remaining - value, index + 1, values.concat(value));
+      };
+      compose(total, 0, []);
+    } else {
+      for (let index = 0; index < baseRaws.length; index++) {
+        const medium = equal.slice();
+        medium[index] = 2;
+        coefficientSets.push(medium);
+        const strong = equal.slice();
+        strong[index] = 4;
+        coefficientSets.push(strong);
+      }
+      // Para seleções maiores, cobre também interações entre pares limitantes sem
+      // gerar a grade simplex combinatória inteira.
+      for (let first = 0; first < baseRaws.length; first++) {
+        for (let second = first + 1; second < baseRaws.length; second++) {
+          const pair = equal.slice();
+          pair[first] = 3;
+          pair[second] = 3;
+          coefficientSets.push(pair);
+        }
+      }
+    }
+    const seenCoefficients = new Set();
+    let rawSumUpper = null;
+    coefficientSets.forEach((coefficients) => {
+      const key = coefficients.join(',');
+      if (seenCoefficients.has(key)) return;
+      seenCoefficients.add(key);
+      const candidate = exactWeightedMultiPlan(attrs, budget, coefficients);
+      candidates.push(candidate);
+      if (coefficients.every((coefficient) => coefficient === 1)) {
+        rawSumUpper = baseRaws.reduce((sum, raw) => sum + raw, 0) + candidate.scalarGain;
+      }
+    });
+
+    let best = null;
+    let bestEvaluation = null;
+    candidates.forEach((candidate) => {
+      const evaluation = multiPlanEvaluation(attrs, baseRaws, candidate.values);
+      const spent = optimizerAddedCost(attrs, candidate.values);
+      if (!best
+        || evaluation.min > bestEvaluation.min
+        || (evaluation.min === bestEvaluation.min && evaluation.sum > bestEvaluation.sum)
+        || (evaluation.min === bestEvaluation.min && evaluation.sum === bestEvaluation.sum && spent < best.added)) {
+        best = { ...candidate, added: spent };
+        bestEvaluation = evaluation;
+      }
+    });
+    const sumUpper = rawSumUpper == null
+      ? null
+      : Math.min(baseRaws.length * 99, Math.floor(rawSumUpper + OVR_EPS) + baseRaws.length * overallOffset());
+    return { ...best, sumUpper, status: 'best-found' };
   }
 
   function optimizerAbortError() {
@@ -599,6 +740,7 @@ window.Calc = (function () {
     let plan;
     let planBudget;
     let repaired = false;
+    let maxSumUpper = null;
     if (mode === 'min' && currentObjective.min >= target) {
       plan = { feasible: true, values: currentValues, added: 0, status: 'optimal' };
       planBudget = 0;
@@ -610,8 +752,11 @@ window.Calc = (function () {
     } else if (mode === 'max' && multi) {
       const budget = Math.min(Math.max(0, opts.additionalAP || 0), maxPossibleCost);
       const problem = multiWorkerProblem(attrs, budget, baseRaws, 'max', null);
+      const fallback = fallbackMultiPlan(attrs, budget, baseRaws, 'max', null);
+      problem.seedValues = fallback.values;
+      maxSumUpper = fallback.sumUpper;
       planBudget = budget;
-      plan = await runMultiWorker(problem, () => fallbackMultiPlan(attrs, budget, baseRaws, 'max', null), opts.signal);
+      plan = await runMultiWorker(problem, () => fallback, opts.signal);
     } else if (mode === 'max') {
       planBudget = Math.min(Math.max(0, opts.additionalAP || 0), maxPossibleCost);
       plan = { ...exactMaxOverallPlan(attrs, planBudget, baseRaws[0]), status: 'optimal' };
@@ -654,7 +799,15 @@ window.Calc = (function () {
     spent = trimmed.spent;
     objective = { overalls: trimmed.overalls, min: trimmed.min, sum: trimmed.sum };
     feasible = mode === 'max' || objective.min >= target;
-    const status = repaired ? 'best-found' : (plan.status || 'best-found');
+    let status = repaired ? 'best-found' : (plan.status || 'best-found');
+    // Certificado barato: todos os atributos no máximo limitam o melhor "menor OVR";
+    // a DP de pesos iguais limita a soma inteira porque Σfloor(raw) <= floor(Σraw).
+    if (mode === 'max' && multi
+      && objective.min === maximumObjective.min
+      && maxSumUpper != null
+      && objective.sum === maxSumUpper) {
+      status = 'optimal';
+    }
     return {
       values,
       added: spent,

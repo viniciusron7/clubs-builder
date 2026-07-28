@@ -253,6 +253,98 @@ test('multi-position optimizer validates cost, trims wasted AP and respects posi
   }
 });
 
+test('multi-position optimizer beats the reported Creator CAM CM CDM regression build', async () => {
+  const { Calc } = createContext();
+  const positions = ['CAM', 'CM', 'CDM'];
+  const derived = Calc.derive(defaultBuild({
+    archetypeId: 'mid_creator',
+    positions,
+  }));
+  const referenceValues = {
+    agility: 74,
+    reactions: 98,
+    ball_control: 96,
+    dribbling: 96,
+    finishing: 94,
+    long_shots: 94,
+    vision: 99,
+    short_passing: 96,
+    long_passing: 96,
+    interceptions: 85,
+    def_aware: 85,
+    standing_tackle: 90,
+    sliding_tackle: 84,
+    acceleration: 84,
+    sprint_speed: 81,
+    stamina: 92,
+    strength: 83,
+    aggression: 90,
+  };
+  const referenceOveralls = Calc.overallMapForValues(positions, derived, referenceValues);
+  const referenceList = Object.values(referenceOveralls);
+  const referenceObjective = {
+    min: Math.min(...referenceList),
+    sum: referenceList.reduce((total, overall) => total + overall, 0),
+  };
+  const result = await Calc.optimize(derived, {
+    positions,
+    mode: 'max',
+    additionalAP: derived.ap.available,
+    disabled: [],
+  });
+
+  assert.equal(result.spent <= derived.ap.available, true);
+  assert.equal(
+    result.objective.min > referenceObjective.min
+      || (result.objective.min === referenceObjective.min && result.objective.sum >= referenceObjective.sum),
+    true,
+  );
+  assert.deepEqual({ ...result.overalls }, { CAM: 94, CM: 95, CDM: 92 });
+  assert.deepEqual({ ...result.objective }, { min: 92, sum: 281 });
+  assert.equal(result.status, 'optimal');
+});
+
+test('weighted multi-position search covers other archetypes and position sets', async () => {
+  const { Calc } = createContext();
+  const cases = [
+    {
+      archetypeId: 'mid_recycler',
+      positions: ['CAM', 'CM', 'CDM'],
+      expected: { CAM: 93, CM: 94, CDM: 93 },
+    },
+    {
+      archetypeId: 'fwd_magician',
+      positions: ['ST', 'CAM', 'RW'],
+      expected: { ST: 94, CAM: 94, RW: 95 },
+    },
+    {
+      archetypeId: 'def_boss',
+      positions: ['CB', 'RB', 'CDM'],
+      expected: { CB: 96, RB: 95, CDM: 95 },
+    },
+    {
+      archetypeId: 'mid_recycler',
+      positions: ['CAM', 'CDM'],
+      expected: { CAM: 93, CDM: 93 },
+    },
+  ];
+
+  for (const item of cases) {
+    const derived = Calc.derive(defaultBuild({
+      archetypeId: item.archetypeId,
+      positions: item.positions,
+    }));
+    const result = await Calc.optimize(derived, {
+      positions: item.positions,
+      mode: 'max',
+      additionalAP: derived.ap.available,
+      disabled: [],
+    });
+    assert.deepEqual({ ...result.overalls }, item.expected, `${item.archetypeId} ${item.positions.join('/')}`);
+    assert.equal(result.spent <= derived.ap.available, true);
+  }
+});
+
 test('minimum-AP optimization returns a feasible, cost-consistent build', async () => {
   const { Calc } = createContext();
   const derived = Calc.derive(defaultBuild({ archetypeId: 'fwd_finisher', positions: ['ST', 'CAM'] }));

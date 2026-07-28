@@ -84,6 +84,21 @@ test('bounded solver labels results as best-found', () => {
   assert.equal(actual.feasible, true);
 });
 
+test('bounded solver keeps a stronger deterministic seed', () => {
+  const { MultiOverallSolver } = createContext(['js/optimizer-worker.js']);
+  const problem = fixture('max');
+  const expected = enumerate(problem);
+  problem.stateLimit = 2;
+  problem.seedValues = Object.fromEntries(problem.attrs.map((attr, index) => [
+    attr.id,
+    attr.options[expected.choices[index]].value,
+  ]));
+  const actual = MultiOverallSolver.solve(problem);
+  assert.equal(actual.status, 'best-found');
+  assert.equal(actual.objective.min, expected.min);
+  assert.equal(actual.objective.sum, expected.sum);
+});
+
 test('solver matches exhaustive search across deterministic reduced problems', () => {
   const { MultiOverallSolver } = createContext(['js/optimizer-worker.js']);
   let seed = 0x5eed1234;

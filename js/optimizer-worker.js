@@ -166,7 +166,7 @@
   function canBeat(problem, state, remaining, incumbent) {
     const optimistic = { cost: state.cost, gains: addVectors(state.gains, remaining), choices: state.choices };
     if (problem.mode === 'min') {
-      if (incumbent && targetMet(problem, incumbent) && state.cost >= incumbent.cost) return false;
+      if (incumbent && targetMet(problem, incumbent) && state.cost > incumbent.cost) return false;
       return targetMet(problem, optimistic);
     }
     if (!incumbent) return true;
@@ -200,6 +200,29 @@
     }));
   }
 
+  function stateForValues(problem, values) {
+    if (!values || typeof values !== 'object') return null;
+    const state = {
+      cost: 0,
+      gains: Array(problem.baseRaws.length).fill(0),
+      choices: Array(problem.attrs.length).fill(0),
+    };
+    for (let attrIndex = 0; attrIndex < problem.attrs.length; attrIndex++) {
+      const attr = problem.attrs[attrIndex];
+      const requested = values[attr.id];
+      let optionIndex = 0;
+      if (Number.isFinite(+requested)) {
+        const exact = attr.options.findIndex((option) => option.value === Math.round(+requested));
+        if (exact >= 0) optionIndex = exact;
+      }
+      const option = attr.options[optionIndex];
+      state.choices[attrIndex] = optionIndex;
+      state.cost += option.cost;
+      state.gains = addVectors(state.gains, option.gains);
+    }
+    return state.cost <= problem.budget ? state : null;
+  }
+
   function solve(problem) {
     const started = Date.now();
     const dimensions = problem.baseRaws.length;
@@ -207,6 +230,13 @@
     const timeLimitMs = Math.max(1, problem.timeLimitMs || 2000);
     const maxRemaining = remainingMaximums(problem);
     let incumbent = greedy(problem);
+    const seeded = stateForValues(problem, problem.seedValues);
+    if (seeded) {
+      const completedSeed = greedy(problem, seeded, 0);
+      if (problem.mode === 'min' ? betterMin(problem, completedSeed, incumbent) : betterMax(problem, completedSeed, incumbent)) {
+        incumbent = completedSeed;
+      }
+    }
     let states = [{ cost: 0, gains: Array(dimensions).fill(0), choices: Array(problem.attrs.length).fill(0) }];
     let visited = 1;
     let bounded = false;
@@ -214,7 +244,7 @@
 
     for (let attrIndex = 0; attrIndex < problem.attrs.length; attrIndex++) {
       const attr = problem.attrs[attrIndex];
-      const expanded = [];
+      let expanded = [];
       let stopped = false;
       let layerTruncated = false;
       for (const state of states) {
@@ -232,15 +262,25 @@
           if (problem.mode === 'min' ? betterMin(problem, candidate, incumbent) : betterMax(problem, candidate, incumbent)) incumbent = candidate;
           if (canBeat(problem, candidate, maxRemaining[attrIndex + 1], incumbent)) expanded.push(candidate);
           if (visited >= stateLimit || Date.now() - started >= timeLimitMs) { stopped = true; break; }
-          if (expanded.length >= LAYER_EXPANSION_LIMIT) { layerTruncated = true; break; }
+          if (expanded.length >= LAYER_EXPANSION_LIMIT) {
+            layerTruncated = true;
+            expanded = beam(problem, dedupe(expanded), maxRemaining[attrIndex + 1]);
+          }
         }
-        if (stopped || layerTruncated) break;
+        if (stopped) break;
       }
 
       if (stopped) {
         bounded = true;
-        states = [];
-        stoppedAt = problem.attrs.length;
+        // Os candidatos já expandidos escolheram o atributo atual e ainda podem ser
+        // completados pelo greedy. O código anterior os apagava e deixava apenas o
+        // incumbente inicial, tornando a recuperação abaixo inalcançável.
+        if (expanded.length) {
+          states = beam(problem, dedupe(expanded), maxRemaining[attrIndex + 1]);
+          stoppedAt = attrIndex + 1;
+        } else {
+          stoppedAt = attrIndex;
+        }
         break;
       }
       if (!expanded.length && !stopped) {

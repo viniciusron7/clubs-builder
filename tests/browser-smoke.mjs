@@ -148,6 +148,34 @@ assert.equal(await evaluate(`(() => {
     && ids.join(',') === 'jumping,stamina,strength,aggression';
 })()`), true);
 
+const creatorOptimizerRegression = await evaluate(`(async () => {
+  const build = {
+    archetypeId: 'mid_creator',
+    level: 100,
+    height: 180,
+    weight: 75,
+    attributes: {},
+    playstyles: [],
+    playstylePurchases: {},
+    signatures: {},
+    positions: ['CAM', 'CM', 'CDM'],
+    disabledAttrs: [],
+    sumExcluded: [],
+  };
+  const derived = Calc.derive(build);
+  const result = await Calc.optimize(derived, {
+    positions: build.positions,
+    mode: 'max',
+    additionalAP: derived.ap.available,
+    disabled: [],
+  });
+  return { overalls: result.overalls, objective: result.objective, spent: result.spent, status: result.status };
+})()`);
+assert.deepEqual(creatorOptimizerRegression.overalls, { CAM: 94, CM: 95, CDM: 92 });
+assert.deepEqual(creatorOptimizerRegression.objective, { min: 92, sum: 281 });
+assert.equal(creatorOptimizerRegression.spent <= 3167, true);
+assert.equal(creatorOptimizerRegression.status, 'optimal');
+
 const buildBeforePlaystyleUnlock = await evaluate(`JSON.stringify(Share.fromUrl())`);
 const spentBeforePlaystyleUnlock = await evaluate(`Calc.derive(Share.fromUrl()).ap.spent`);
 await click('[data-modal="playStyles"]');
@@ -369,6 +397,7 @@ console.log(JSON.stringify({
   positionText,
   optimizerToast,
   unreachableToast,
+  creatorOptimizerRegression,
   playstyleQuickUnlock,
   exportCanvas,
   mobileLayout,
