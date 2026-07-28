@@ -88,7 +88,7 @@ await evaluate(`document.querySelector('#opt-ovr').value = '99'`);
 await click('#opt-run');
 await waitFor(`/unreachable/i.test(document.querySelector('#toast').innerText)`);
 const unreachableToast = await evaluate(`document.querySelector('#toast').innerText`);
-assert.match(unreachableToast, /best is OVR 97/i);
+assert.match(unreachableToast, /best is OVR 96/i);
 assert.equal(await evaluate(`JSON.stringify(Share.fromUrl().attributes)`), attributesBeforeImpossibleTarget);
 await click('[data-modal-close]');
 await click('[data-pos="CAM"]');
@@ -96,6 +96,30 @@ const positionText = await evaluate(`document.querySelector('#positions-bar').in
 assert.match(positionText, /Lowest Est\. OVR/i);
 assert.doesNotMatch(positionText, /PRIMARY|ALT/i);
 assert.equal(await evaluate(`(() => { const b = Share.fromUrl(); const d = Calc.derive(b); const a = Calc.overallMapForValues(['ST','CAM'], d, null); const z = Calc.overallMapForValues(['CAM','ST'], d, null); return JSON.stringify(a) === JSON.stringify({ ST: z.ST, CAM: z.CAM }); })()`), true);
+await click('#btn-weights');
+assert.equal(await evaluate(`document.querySelector('#btn-weights').getAttribute('aria-checked')`), 'true');
+const combinedWeightLabel = await evaluate(`document.querySelector('#btn-weights').innerText`);
+assert.match(combinedWeightLabel, /ST/);
+assert.match(combinedWeightLabel, /CAM/);
+assert.equal(await evaluate(`document.querySelectorAll('.attr-weight').length > 0`), true);
+assert.equal(await evaluate(`document.querySelectorAll('.attr-weight:not(.is-zero)').length > 0`), true);
+assert.equal(await evaluate(`document.querySelectorAll('#attributes .key-attribute-icon').length > 0`), true);
+assert.equal(await evaluate(`document.querySelector('#attributes .key-attribute-icon').naturalWidth > 0`), true);
+assert.equal(await evaluate(`getComputedStyle(document.querySelector('#attributes .key-attribute-name')).color`), 'rgb(7, 244, 104)');
+assert.equal(await evaluate(`document.querySelector('[data-attr="skill_moves"] .key-attribute-icon')`), null);
+assert.equal(await evaluate(`document.querySelector('[data-attr="weak_foot"] .key-attribute-icon')`), null);
+assert.equal(await evaluate(`(() => {
+  const pace = document.querySelector('[data-category="pace"]').getBoundingClientRect();
+  const physical = document.querySelector('[data-category="physical"]').getBoundingClientRect();
+  const other = document.querySelector('[data-category="other"]').getBoundingClientRect();
+  const physicalBody = document.querySelector('[data-category="physical"] .attribute-card-body');
+  const ids = [...physicalBody.querySelectorAll('[data-attr]')].map((el) => el.dataset.attr);
+  return Math.abs(pace.top - physical.top) < 1
+    && Math.abs(physical.top - other.top) < 1
+    && physical.width > pace.width * 1.8
+    && getComputedStyle(physicalBody).gridTemplateColumns.split(' ').length === 2
+    && ids.join(',') === 'jumping,stamina,strength,aggression';
+})()`), true);
 
 const buildBeforePlaystyleUnlock = await evaluate(`JSON.stringify(Share.fromUrl())`);
 const spentBeforePlaystyleUnlock = await evaluate(`Calc.derive(Share.fromUrl()).ap.spent`);
@@ -154,7 +178,16 @@ await click('#opt-run');
 await waitFor(`document.querySelector('#modal-root').classList.contains('hidden')`, 6000);
 const optimizerToast = await evaluate(`document.querySelector('#toast').innerText`);
 assert.match(optimizerToast, /(optimal|best found)/);
+assert.equal(await evaluate(`document.querySelector('#panel .ap-icon').getAttribute('src')`), 'assets/ui/ap.png');
+assert.equal(await evaluate(`document.querySelector('#panel .ap-icon').naturalWidth > 0`), true);
+assert.doesNotMatch(await evaluate(`document.querySelector('#panel').innerText`), /Select an attribute to edit/i);
 await screenshot('/tmp/clubs-builder-desktop.png');
+await click('[data-attr="vision"]');
+assert.equal(await evaluate(`document.querySelector('#panel').dataset.kind`), 'attribute');
+assert.match(await evaluate(`document.querySelector('#panel').innerText`), /Vision/i);
+assert.equal(await evaluate(`document.querySelectorAll('#panel .attribute-related-item').length > 0`), true);
+assert.equal(await evaluate(`document.querySelector('#panel .ap-icon').naturalWidth > 0`), true);
+await screenshot('/tmp/clubs-builder-attribute-detail.png');
 
 // UT players: buildable/all toggle, position filter and a search box that keeps focus while typing.
 await click('#btn-utplayers');
@@ -226,6 +259,10 @@ if (mobileLayout.width !== 390 || mobileLayout.scrollWidth > mobileLayout.width)
 assert.equal(mobileLayout.width, 390);
 assert.equal(mobileLayout.scrollWidth <= mobileLayout.width, true);
 assert.equal(mobileLayout.positionsHeight > 0, true);
+await click('#btn-weights');
+assert.equal(await evaluate(`document.querySelector('#btn-weights').getAttribute('aria-checked')`), 'true');
+assert.equal(await evaluate(`document.querySelectorAll('.attr-weight').length > 0`), true);
+assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), true);
 await screenshot('/tmp/clubs-builder-mobile.png');
 await click('[data-modal="playStyles"]');
 const mobilePlaystylesLayout = await evaluate(`(() => { const modal = document.querySelector('#modal-box'); return { clientWidth: modal.clientWidth, scrollWidth: modal.scrollWidth }; })()`);

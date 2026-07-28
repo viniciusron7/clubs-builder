@@ -35,7 +35,7 @@ pelo canvas e pelo clipboard quando a página é aberta diretamente por `file://
   um dos 4 slots de signature pelo seu PlayStyle+.
 - **Posições + OVR estimado** — escolha 1+ posições de linha; GK é automático para goleiros.
   Cada posição é calculada independentemente por `js/weights.js` usando somente atributos comprados:
-  `OVR = floor(intercepto + Σ peso·atributo)`, limitado a 1–99. Altura, peso e Facilities alteram
+  `OVR = floor(intercepto + Σ peso·atributo) - 1`, limitado a 1–99. Altura, peso e Facilities alteram
   atributos efetivos de partida, não o OVR estimado do lobby. A tolerância esperada é ±1.
 - O modelo v2 foi validado nas cartas base Common/Rare: 93,43% exato e 99,995% dentro de ±1
   em 19.363 jogadores de linha; 88,05% exato e 100% ±1 nos 2.528 jogadores 75+; 98,05% exato
@@ -67,7 +67,12 @@ a área principal mostra os atributos + o painel de detalhe do atributo selecion
 
 ```
 clubs-builder/
-  index.html          # esqueleto + chrome estático
+  index.html          # entrada do site no GitHub Pages
+  site.webmanifest    # metadados de instalação/PWA
+  assets/
+    ui/               # ícones próprios da interface (AP e Key Attribute)
+  archetypes/         # ícones SVG dos arquétipos
+  playstyles/         # ícones PNG dos PlayStyles e PlayStyles+
   css/
     vendor.css        # Tailwind compilado, reaproveitado do original
     app.css           # complementos (utilitários ausentes + ajustes)
@@ -78,8 +83,8 @@ clubs-builder/
     history.js        # histórico imutável de undo/redo
     share.js          # URL (encode/decode) + export de imagem (canvas)
     app.js            # estado + render + eventos
-  tests/              # testes node:test sem dependências externas
-  archetypes/ playstyles/   # ícones (SVG/PNG) reaproveitados
+  data/               # dataset UT compacto usado pela interface
+  tests/              # testes node:test + smoke test no navegador
 ```
 
 ## Notas

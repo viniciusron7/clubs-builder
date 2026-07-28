@@ -7,6 +7,7 @@ window.Calc = (function () {
   const D = window.DATA;
   const byId = (arr, id) => arr.find((x) => x.id === id) || null;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const NON_KEY_ATTRIBUTES = new Set(['skill_moves', 'weak_foot']);
 
   const archetype = (id) => byId(D.archetypes, id);
   const facility = (id) => byId(D.facilities, id) || byId(D.aiFacilities, id);
@@ -18,7 +19,7 @@ window.Calc = (function () {
       id: cat.id,
       attributes: cat.attributes.map((attr) => {
         const mod = arch ? arch.modifiers.find((m) => m.attributeId === attr.id) : null;
-        const isKey = !!(arch && arch.keyAttributes.includes(attr.id));
+        const isKey = !!(arch && arch.keyAttributes.includes(attr.id) && !NON_KEY_ATTRIBUTES.has(attr.id));
         const noDiscount = !!(arch && (arch.noDiscountKeyAttributes || []).includes(attr.id));
         let tier = attr.tier;
         if (isKey && !noDiscount && D.keyTierDiscount[tier]) tier = D.keyTierDiscount[tier];
@@ -222,6 +223,13 @@ window.Calc = (function () {
   const OVR_EPS = 1e-9;
   const overallModel = () => window.OVERALL_MODEL || {};
   const legacyWeights = () => window.OVERALL_WEIGHTS || {};
+  function overallOffset() {
+    const offset = Number(overallModel().gameCalibrationOffset);
+    return Number.isFinite(offset) ? offset : 0;
+  }
+  function rawThresholdForOverall(overall) {
+    return overall - overallOffset();
+  }
   function normalizePositions(positions) {
     if (!positions) return [];
     const list = Array.isArray(positions) ? positions : [positions];
@@ -265,7 +273,7 @@ window.Calc = (function () {
   }
   function overallFromRaw(raw) {
     const limits = overallModel().limits || { min: 1, max: 99 };
-    return clamp(Math.floor(raw + OVR_EPS), limits.min, limits.max);
+    return clamp(Math.floor(raw + OVR_EPS) + overallOffset(), limits.min, limits.max);
   }
   function overallForPositions(positions, derived) {
     const map = overallMapForValues(positions, derived, null);
@@ -283,6 +291,35 @@ window.Calc = (function () {
       overalls[pos] = overallFromRaw(overallRawForPosition(pos, derived, values));
     });
     return overalls;
+  }
+  // Perfil de peso exibido pela interface. Em seleção múltipla, combina todas as
+  // posições pela média dos coeficientes. Assim o perfil representa o ganho conjunto
+  // de OVR e nunca muda silenciosamente para apenas uma das posições selecionadas.
+  function overallWeightProfile(positions, derived) {
+    const list = normalizePositions(positions);
+    const overalls = derived ? overallMapForValues(list, derived, null) : {};
+    const minimum = list.length && derived ? Math.min(...list.map((pos) => overalls[pos])) : 0;
+    const limitingPositions = list.length <= 1 || !derived
+      ? list.slice()
+      : list.filter((pos) => overalls[pos] === minimum);
+    const weightedPositions = list.slice();
+    const weights = {};
+    if (derived) {
+      for (const category of derived.categories) for (const attr of category.attributes) {
+        weights[attr.id] = weightedPositions.length
+          ? weightedPositions.reduce((sum, pos) => sum + pesoFor(pos, attr.id), 0) / weightedPositions.length
+          : 0;
+      }
+    }
+    return {
+      mode: list.length > 1 ? 'minmax' : 'single',
+      positions: list,
+      weightedPositions,
+      limitingPositions,
+      overalls,
+      minimum,
+      weights,
+    };
   }
   function minOverallFromMap(overalls) {
     const vals = Object.values(overalls);
@@ -401,11 +438,11 @@ window.Calc = (function () {
     });
 
     let chosenBudget = 0;
-    let bestOverall = Math.floor(baseRaw + OVR_EPS);
+    let bestOverall = overallFromRaw(baseRaw);
     let bestGain = 0;
     for (let b = 0; b <= cappedBudget; b++) {
       if (dp[b] === -Infinity) continue;
-      const ovr = Math.floor(baseRaw + dp[b] + OVR_EPS);
+      const ovr = overallFromRaw(baseRaw + dp[b]);
       if (ovr > bestOverall || (ovr === bestOverall && b < chosenBudget) || (ovr === bestOverall && b === chosenBudget && dp[b] > bestGain)) {
         bestOverall = ovr;
         chosenBudget = b;
@@ -431,7 +468,7 @@ window.Calc = (function () {
     const raws = baseRaws.slice();
     let added = 0;
     const currentValues = Object.fromEntries(work.map((a) => [a.id, a.val]));
-    const minFloor = () => Math.min(...raws.map((r) => Math.floor(r + OVR_EPS)));
+    const minFloor = () => Math.min(...raws.map(overallFromRaw));
     const minRaw = () => Math.min(...raws);
     const rawSum = () => raws.reduce((s, v) => s + v, 0);
 
@@ -445,7 +482,7 @@ window.Calc = (function () {
         const cost = apCostAt(a.tier, a.val + 1);
         if (added + cost > cappedBudget) continue;
         const nextRaws = raws.map((r, i) => r + (a.weights[i] || 0));
-        const nextFloor = Math.min(...nextRaws.map((r) => Math.floor(r + OVR_EPS)));
+        const nextFloor = Math.min(...nextRaws.map(overallFromRaw));
         const nextRawMin = Math.min(...nextRaws);
         const nextSum = nextRaws.reduce((s, v) => s + v, 0);
         const score = ((nextFloor - beforeFloor) * 1000000)
@@ -477,6 +514,7 @@ window.Calc = (function () {
       mode,
       budget: Math.max(0, Math.floor(budget)),
       baseRaws,
+      overallOffset: overallOffset(),
       targetOverall: targetOverall == null ? null : clamp(Math.floor(targetOverall), 1, 99),
       stateLimit: 250000,
       timeLimitMs: 2000,
@@ -622,7 +660,7 @@ window.Calc = (function () {
       plan = await runMultiWorker(problem, () => fallbackMultiPlan(attrs, maxPossibleCost, baseRaws, 'min', target), opts.signal);
     } else {
       planBudget = maxPossibleCost;
-      const requiredGain = target - baseRaws[0];
+      const requiredGain = rawThresholdForOverall(target) - baseRaws[0];
       plan = requiredGain <= OVR_EPS
         ? { feasible: true, added: 0, gain: 0, values: Object.fromEntries(attrs.map((a) => [a.id, a.val])), status: 'optimal' }
         : { ...exactUpgradePlan(attrs, maxPossibleCost, requiredGain), status: 'optimal' };
@@ -900,7 +938,7 @@ window.Calc = (function () {
     facilityAdjustments, facilityCost, facilityUnlocks, budget,
     playstyleEligible, unlockedSlots, signaturePlusCount, barColor,
     archetypeSpecializations, specializationUnlocked, requirementUnlockPlan, quickUnlockCost, signatureSlots, curVal, findAttr,
-    pesoFor, pesoForPositions, overallRawForPosition, overallRawForPositions, overallRawForValues,
+    pesoFor, pesoForPositions, overallWeightProfile, overallRawForPosition, overallRawForPositions, overallRawForValues,
     overallForPosition, overallForPositions, overallIfPrimary, overallMapForValues, optimize, maximizeSum, targetPlan,
     normalizeBuild, derive, clamp,
   };

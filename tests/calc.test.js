@@ -7,8 +7,24 @@ test('OVR model v2 exposes independent outfield and goalkeeper formulas', () => 
   assert.equal(OVERALL_MODEL.version, 2);
   assert.deepEqual(Object.keys(OVERALL_MODEL.positions), ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB', 'GK']);
   assert.equal(OVERALL_MODEL.rounding, 'floor');
+  assert.equal(OVERALL_MODEL.gameCalibrationOffset, -1);
   assert.equal(OVERALL_MODEL.metrics.crossValidation5Fold.outfield75Plus.within1 > 0.999, true);
   assert.equal(OVERALL_MODEL.metrics.crossValidation5Fold.goalkeeper.within1, 1);
+});
+
+test('displayed OVR applies the in-game minus-one calibration', () => {
+  const { Calc, OVERALL_MODEL } = createContext();
+  const derived = Calc.derive(defaultBuild({
+    archetypeId: 'fwd_finisher',
+    positions: ['ST'],
+    attributes: { finishing: 92, reactions: 90, acceleration: 88 },
+  }));
+  const raw = Calc.overallRawForPosition('ST', derived);
+  const expected = Math.max(
+    OVERALL_MODEL.limits.min,
+    Math.min(OVERALL_MODEL.limits.max, Math.floor(raw + 1e-9) - 1),
+  );
+  assert.equal(Calc.overallForPosition('ST', derived), expected);
 });
 
 test('level, AP, facilities and specialization tables match the level-100 ruleset', () => {
@@ -19,6 +35,18 @@ test('level, AP, facilities and specialization tables match the level-100 rulese
   assert.equal(DATA.aiFacilities.length, 42);
   DATA.archetypes.forEach((arch) => assert.equal(DATA.specializations.filter((spec) => spec.archetypeId === arch.id).length, 3));
   assert.equal(DATA.specializations.some((spec) => spec.id === 'spider' && spec.archetypeId === 'gk_shot_stopper'), true);
+});
+
+test('attribute bar colors follow the four configured value ranges', () => {
+  const { Calc } = createContext();
+  assert.equal(Calc.barColor(0), '#F87E0B');
+  assert.equal(Calc.barColor(69), '#F87E0B');
+  assert.equal(Calc.barColor(70), '#F7B702');
+  assert.equal(Calc.barColor(79), '#F7B702');
+  assert.equal(Calc.barColor(80), '#268535');
+  assert.equal(Calc.barColor(89), '#268535');
+  assert.equal(Calc.barColor(90), '#07F468');
+  assert.equal(Calc.barColor(99), '#07F468');
 });
 
 test('position order, body and facilities do not change estimated OVR', () => {
@@ -32,6 +60,34 @@ test('position order, body and facilities do not change estimated OVR', () => {
   assert.equal(Calc.overallForPosition('CAM', first), Calc.overallForPosition('CAM', second));
 });
 
+test('displayed OVR weights use the selected position or average every selected position', () => {
+  const { Calc } = createContext();
+  const derived = Calc.derive(defaultBuild({
+    archetypeId: 'fwd_finisher',
+    positions: ['ST', 'CAM'],
+    attributes: { finishing: 86, short_passing: 82, reactions: 80 },
+  }));
+
+  const single = Calc.overallWeightProfile(['ST'], derived);
+  assert.equal(single.mode, 'single');
+  assert.deepEqual([...single.limitingPositions], ['ST']);
+  assert.equal(single.weights.finishing, Calc.pesoFor('ST', 'finishing'));
+
+  const multi = Calc.overallWeightProfile(['ST', 'CAM'], derived);
+  const minimum = Math.min(multi.overalls.ST, multi.overalls.CAM);
+  const expectedLimiters = ['ST', 'CAM'].filter((position) => multi.overalls[position] === minimum);
+  const expectedFinishing = ['ST', 'CAM'].reduce(
+    (sum, position) => sum + Calc.pesoFor(position, 'finishing'),
+    0,
+  ) / 2;
+  assert.deepEqual([...multi.weightedPositions], ['ST', 'CAM']);
+  assert.deepEqual([...multi.limitingPositions], expectedLimiters);
+  assert.equal(Math.abs(multi.weights.finishing - expectedFinishing) < 1e-12, true);
+
+  const reversed = Calc.overallWeightProfile(['CAM', 'ST'], derived);
+  assert.equal(JSON.stringify(reversed.weights), JSON.stringify(multi.weights));
+});
+
 test('key attributes marked no-discount use their original AP tier', () => {
   const { Calc } = createContext();
   const cases = [
@@ -43,6 +99,17 @@ test('key attributes marked no-discount use their original AP tier', () => {
     const attr = Calc.findAttr(derived.categories, attrId);
     assert.equal(attr.tier, expectedTier);
     assert.equal(Calc.apCost(attr.tier, attr.baseValue, attr.maxValue), expectedCost);
+  }
+});
+
+test('Skill Moves and Weak Foot are never treated as key attributes', () => {
+  const { Calc, DATA } = createContext();
+  for (const arch of DATA.archetypes) {
+    const derived = Calc.derive(defaultBuild({ archetypeId: arch.id }));
+    for (const id of ['skill_moves', 'weak_foot']) {
+      const attr = Calc.findAttr(derived.categories, id);
+      assert.equal(attr.isKeyAttribute, false, `${arch.id} must not mark ${id} as key`);
+    }
   }
 });
 
@@ -140,7 +207,7 @@ test('optimizer reports the actual maximum when a single-position target is unre
   assert.equal(unreachable.feasible, false);
   assert.equal(unreachable.overall, maximum.overall);
   assert.equal(unreachable.spent, maximum.spent);
-  assert.equal(unreachable.overall, 97);
+  assert.equal(unreachable.overall, 96);
 });
 
 test('multi-position optimizer validates cost, trims wasted AP and respects position order', async () => {

@@ -28,6 +28,8 @@ node_modules/
 *.temp
 *.cache
 *.pid
+*.orig
+*.rej
 tmp/
 temp/
 
@@ -39,3 +41,9 @@ test-results/
 screenshots/
 dist/
 build/
+
+# Materiais locais de referência (não fazem parte do site)
+references/
+
+# Dataset completo opcional usado apenas na validação estatística local
+data/*.csv

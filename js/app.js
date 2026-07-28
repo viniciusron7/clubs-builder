@@ -20,6 +20,7 @@
   let build = defaultBuild();
   const ui = {
     filter: 'all', selectedAttr: null, modal: null, facilityKind: 'player',
+    showWeights: false,
     optimizing: false, optimizeRunId: 0, optimizeController: null,
     psPicker: false,
     utPlayers: null, utLoading: false, utError: null, utQuery: '',
@@ -126,43 +127,51 @@
   function renderSummary(d) {
     const arch = d.arch;
     const apClass = d.ap.available < 0 ? 'text-state-error' : 'text-accent-light';
-    const accel = d.accel ? `<span class="px-2 py-0.5 rounded text-xs font-bold ${accelClass(d.accel)}">${d.accel}</span>` : '';
+    const accel = d.accel ? `<span class="summary-tag px-2 py-0.5 rounded text-xs font-bold ${accelClass(d.accel)}">${d.accel}</span>` : '';
     const undoDisabled = !history.canUndo();
     const redoDisabled = !history.canRedo();
     const archInfo = arch
-      ? `<img src="archetypes/${arch.iconFileName}" alt="" class="w-9 h-9 object-contain" />
+      ? `<span class="summary-avatar"><img src="archetypes/${arch.iconFileName}" alt="" class="w-9 h-9 object-contain" /></span>
          <div class="leading-tight">
-           <div class="font-bold text-sm text-white">${esc(archName(arch.id))}</div>
-           <div class="text-xs text-t-muted uppercase">${L.position[arch.position.toLowerCase()] || arch.position}</div>
+           <div class="summary-player-name font-bold text-sm text-white">${esc(archName(arch.id))}</div>
+           <div class="summary-label text-xs text-t-muted uppercase">${L.position[arch.position.toLowerCase()] || arch.position}</div>
          </div>`
       : `<div class="text-sm text-t-muted">Select an archetype</div>`;
     $('#summary-bar').innerHTML = `
-      <div class="flex items-center gap-2.5">${archInfo}</div>
-      <div class="flex items-center gap-4">
-        <div class="text-center leading-tight">
-          <div class="text-xs text-t-muted uppercase">Height / Weight</div>
+      <div class="summary-player flex items-center gap-2.5">${archInfo}</div>
+      <div class="summary-physique flex items-center gap-4">
+        <div class="summary-metric text-center leading-tight">
+          <div class="summary-label text-xs text-t-muted uppercase">Height / Weight</div>
           <div class="font-bold text-sm text-white">${build.height}cm / ${build.weight}kg</div>
         </div>
-        ${accel ? `<div class="text-center leading-tight"><div class="text-xs text-t-muted uppercase">AcceleRATE</div>${accel}</div>` : ''}
+        ${accel ? `<div class="summary-metric text-center leading-tight"><div class="summary-label text-xs text-t-muted uppercase">AcceleRATE</div>${accel}</div>` : ''}
       </div>
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-t-muted uppercase">LVL</span>
-          <input id="level-input" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
-            aria-label="Player level, 1 to ${D.maxLevel}" value="${build.level}"
-            class="w-14 px-2 py-1 bg-app-card border border-b-primary rounded text-lg font-bold text-white text-center" />
-          <button id="level-max" class="px-2 py-1 bg-btn-purple hover:bg-btn-purple-hover text-white rounded font-bold text-xs transition-colors">MAX</button>
+      <div class="summary-controls flex items-center gap-3">
+        <div class="summary-progress flex items-center gap-3">
+          <div class="summary-level flex items-center gap-1.5">
+            <span class="summary-label text-xs text-t-muted uppercase">LVL</span>
+            <input id="level-input" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
+              aria-label="Player level, 1 to ${D.maxLevel}" value="${build.level}"
+              class="w-14 px-2 py-1 bg-app-card border border-b-primary rounded text-lg font-bold text-white text-center" />
+            <button id="level-max" class="level-max px-2 py-1 bg-btn-purple hover:bg-btn-purple-hover text-white rounded font-bold text-xs transition-colors">MAX</button>
+          </div>
+          <div class="summary-ap text-center min-w-[54px] leading-none">
+            <div class="summary-label text-xs text-t-muted uppercase mb-0.5">AP left</div>
+            <div class="text-xl font-bold ${apClass}">${d.ap.available}</div>
+            <div class="text-[10px] text-t-muted mt-0.5">${d.ap.spent} / ${d.ap.total}</div>
+          </div>
         </div>
-        <div class="text-center min-w-[54px] leading-none">
-          <div class="text-xs text-t-muted uppercase mb-0.5">AP left</div>
-          <div class="text-xl font-bold ${apClass}">${d.ap.available}</div>
-          <div class="text-[10px] text-t-muted mt-0.5">${d.ap.spent} / ${d.ap.total}</div>
+        <div class="summary-actions flex items-center gap-2">
+          <div class="summary-history flex items-center gap-1">
+            <button id="btn-undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo" ${undoDisabled ? 'disabled' : ''} class="px-2 py-1.5 rounded-lg font-bold text-xs transition-colors active:scale-95 ${undoDisabled ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}">↶ <span>Undo</span></button>
+            <button id="btn-redo" title="Redo (Ctrl/Cmd+Y)" aria-label="Redo" ${redoDisabled ? 'disabled' : ''} class="px-2 py-1.5 rounded-lg font-bold text-xs transition-colors active:scale-95 ${redoDisabled ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}">↷ <span>Redo</span></button>
+          </div>
+          <div class="summary-export flex items-center gap-1">
+            <button id="btn-share" class="bg-btn-blue hover:bg-btn-blue-hover text-white font-bold px-2.5 py-1.5 text-xs rounded-lg transition-colors">↗ Share</button>
+            <button id="btn-image" class="bg-app-card hover:bg-app-hover text-t-secondary font-bold px-2.5 py-1.5 text-xs rounded-lg transition-colors">↓ Image</button>
+          </div>
+          <button id="btn-reset" class="summary-reset bg-btn-red hover:bg-btn-red-hover text-white border-2 border-btn-red-hover font-bold px-3 py-1.5 text-sm rounded-lg transition-all active:scale-95">Reset</button>
         </div>
-        <div class="flex items-center gap-1">
-          <button id="btn-undo" title="Undo (Ctrl/Cmd+Z)" ${undoDisabled ? 'disabled' : ''} class="px-2 py-1.5 rounded-lg font-bold text-xs transition-colors active:scale-95 ${undoDisabled ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}">UNDO</button>
-          <button id="btn-redo" title="Redo (Ctrl/Cmd+Y)" ${redoDisabled ? 'disabled' : ''} class="px-2 py-1.5 rounded-lg font-bold text-xs transition-colors active:scale-95 ${redoDisabled ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}">REDO</button>
-        </div>
-        <button id="btn-reset" class="bg-btn-red hover:bg-btn-red-hover text-white border-2 border-btn-red-hover font-bold px-3 py-1.5 text-sm rounded-lg transition-all active:scale-95">RESET</button>
       </div>`;
   }
   const accelClass = (t) => t === 'EXPLOSIVE' ? 'bg-state-error/20 text-state-error'
@@ -174,13 +183,13 @@
     $('#archetype-filters').innerHTML = filters.map((f) => {
       const label = f === 'all' ? 'All' : (L.position[f.toLowerCase() + '_shorten'] || f);
       const active = ui.filter === f;
-      return `<button data-filter="${f}" aria-pressed="${active}" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${active ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'}">${esc(label)}</button>`;
+      return `<button data-filter="${f}" aria-pressed="${active}" class="filter-chip px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors ${active ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'}">${esc(label)}</button>`;
     }).join('');
     const list = D.archetypes.filter((a) => ui.filter === 'all' || a.position === ui.filter);
     $('#archetype-grid').innerHTML = list.map((a) => {
       const sel = build.archetypeId === a.id;
       return `
-        <button data-arch="${a.id}" aria-pressed="${sel}" class="relative flex flex-col items-center gap-1.5 p-2 sm:p-3 rounded-xl border transition-all active:scale-95 ${sel ? 'bg-btn-blue border-state-info ring-2 ring-state-info shadow-lg' : 'bg-app-panel border-b-primary hover:bg-app-card hover:border-b-secondary'}">
+        <button data-arch="${a.id}" aria-pressed="${sel}" class="arch-card relative flex flex-col items-center gap-1.5 p-2 sm:p-3 rounded-xl border transition-all active:scale-95 ${sel ? 'bg-btn-blue border-state-info ring-2 ring-state-info shadow-lg' : 'bg-app-panel border-b-primary hover:bg-app-card hover:border-b-secondary'}">
           <img src="archetypes/${a.iconFileName}" alt="${esc(archName(a.id))}" class="w-11 h-11 sm:w-14 sm:h-14 object-contain ${sel ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}" />
           <span class="text-[10px] sm:text-xs font-medium text-center leading-tight ${sel ? 'text-white' : 'text-t-muted'}">${esc(archName(a.id))}</span>
         </button>`;
@@ -192,26 +201,34 @@
     const bar = $('#positions-bar');
     if (!d.arch) { bar.innerHTML = '<div class="text-sm text-t-muted">Select an archetype to set positions and overall.</div>'; return; }
     const availablePositions = d.arch.position === 'GK' ? ['GK'] : OUTFIELD_POSITIONS;
+    const weightProfile = build.positions.length ? C.overallWeightProfile(build.positions, d) : null;
+    const weightContext = weightProfile && weightProfile.weightedPositions.join(' / ');
     const chips = availablePositions.map((p) => {
       const on = build.positions.includes(p);
       const automatic = d.arch.position === 'GK';
       const ovr = on ? C.overallForPosition(p, d) : null;
-      return `<button data-pos="${p}" ${automatic ? 'disabled' : ''} aria-pressed="${on}" title="${automatic ? 'Goalkeeper position is automatic' : on ? `${p}: estimated OVR ${ovr} (expected tolerance ±1)` : 'Add position'}" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${on ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'} ${automatic ? 'cursor-default' : ''}">${p}${on ? `<span class="px-1 rounded bg-black/30 text-[11px]">${ovr}</span>` : ''}</button>`;
+      return `<button data-pos="${p}" ${automatic ? 'disabled' : ''} aria-pressed="${on}" title="${automatic ? 'Goalkeeper position is automatic' : on ? `${p}: estimated OVR ${ovr} (expected tolerance ±1)` : 'Add position'}" class="position-chip px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${on ? 'bg-btn-blue text-white' : 'bg-app-panel text-t-muted hover:bg-app-card'} ${automatic ? 'cursor-default' : ''}">${p}${on ? `<span class="px-1 rounded bg-black/30 text-[11px]">${ovr}</span>` : ''}</button>`;
     }).join('');
     let summary = '';
     if (build.positions.length) {
       const ovr = C.overallForPositions(build.positions, d);
-      summary = `<div class="text-center leading-none" title="Estimate based on purchased attributes; expected tolerance ±1"><div class="text-[10px] text-t-muted uppercase mb-0.5">${build.positions.length > 1 ? 'Lowest Est. OVR' : 'Est. OVR'} <span class="normal-case">±1</span></div><div class="text-2xl font-bold text-accent-light">${ovr}</div></div>`;
+      summary = `<div class="overall-badge text-center leading-none" title="Estimate based on purchased attributes; expected tolerance ±1"><div class="text-[10px] text-t-muted uppercase mb-0.5">${build.positions.length > 1 ? 'Lowest Est. OVR' : 'Est. OVR'} <span class="normal-case">±1</span></div><div class="text-2xl font-bold text-accent-light">${ovr}</div></div>`;
     }
     bar.innerHTML = `
-      <div class="flex flex-wrap items-center gap-1.5">
+      <div class="position-picker flex flex-wrap items-center gap-1.5">
         <span class="text-xs text-t-muted uppercase font-bold mr-1">Positions</span>${chips}
+        <button id="btn-weights" role="switch" aria-checked="${ui.showWeights}" ${!build.positions.length ? 'disabled' : ''}
+          title="${build.positions.length > 1 ? `Combined weights average all selected positions: ${esc(weightContext || 'selected positions')}` : 'Show each attribute coefficient in the selected-position OVR formula'}"
+          class="weight-toggle ${ui.showWeights ? 'is-on' : ''}" type="button">
+          <span class="weight-toggle-track" aria-hidden="true"><span></span></span>
+          <span>Weights${ui.showWeights && weightContext ? ` · ${esc(weightContext)}` : ''}</span>
+        </button>
       </div>
       <div class="position-actions flex items-center gap-2">
         ${summary}
-        <button id="btn-optimize" ${!build.positions.length ? 'disabled' : ''} class="px-3 py-2 rounded-lg font-bold text-sm transition-colors ${build.positions.length ? 'bg-btn-purple hover:bg-btn-purple-hover text-white' : 'bg-app-panel text-t-disabled cursor-not-allowed'}">⚡ Optimize Overall</button>
-        <button id="btn-utplayers" class="px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">UT Players</button>
-        <button id="btn-maxsum" class="px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">Max Sum</button>
+        <button id="btn-optimize" ${!build.positions.length ? 'disabled' : ''} class="action-primary px-3 py-2 rounded-lg font-bold text-sm transition-colors ${build.positions.length ? 'bg-btn-purple hover:bg-btn-purple-hover text-white' : 'bg-app-panel text-t-disabled cursor-not-allowed'}">⚡ Optimize overall</button>
+        <button id="btn-utplayers" class="action-secondary px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">UT players</button>
+        <button id="btn-maxsum" class="action-secondary px-3 py-2 rounded-lg font-bold text-sm transition-colors bg-app-panel hover:bg-app-card text-white border border-b-primary">Max sum</button>
       </div>`;
   }
 
@@ -220,7 +237,7 @@
     const tabs = [['playStyles', L.tabs.playStyles], ['specializations', L.tabs.specializations], ['facilities', L.tabs.facilities], ['body', L.tabs.body]];
     const disabled = !build.archetypeId;
     $('#tabs').innerHTML = tabs.map(([id, label]) =>
-      `<button data-modal="${id}" ${disabled ? 'disabled' : ''} class="px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`
+      `<button data-modal="${id}" ${disabled ? 'disabled' : ''} class="builder-tab px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`
     ).join('');
   }
 
@@ -234,26 +251,34 @@
       $('#attributes').innerHTML = `<div class="col-span-full bg-app-panel rounded-xl border border-b-primary p-10 text-center text-t-muted">Select an archetype above to start building.</div>`;
       return;
     }
+    const weightProfile = ui.showWeights && build.positions.length
+      ? C.overallWeightProfile(build.positions, d)
+      : null;
     $('#attributes').innerHTML = visibleCategories(d).map((cat) => `
-      <div class="bg-app-panel rounded-xl border border-b-primary overflow-hidden self-start">
-        <div class="w-full p-4 flex items-center justify-between min-h-[52px]">
-          <h2 class="text-base font-bold text-t-secondary tracking-wide">${esc(catName(cat.id))}</h2>
-        </div>
-        <div class="px-3 pb-3 space-y-1.5">${cat.attributes.map((a) => attributeRow(a, d)).join('')}</div>
-      </div>`).join('');
+      <section class="attribute-card bg-app-panel rounded-xl border border-b-primary overflow-hidden self-start" data-category="${esc(cat.id)}" aria-labelledby="attribute-category-${esc(cat.id)}">
+        <header class="attribute-card-head w-full p-4 flex items-center justify-between min-h-[52px]">
+          <h2 id="attribute-category-${esc(cat.id)}" class="text-base font-bold text-t-secondary tracking-wide">${esc(catName(cat.id))}</h2>
+          ${weightProfile ? '<span class="attr-weight-label">OVR weight</span>' : ''}
+        </header>
+        <div class="attribute-card-body px-3 pb-3 space-y-1.5">${cat.attributes.map((a) => attributeRow(a, d, weightProfile)).join('')}</div>
+      </section>`).join('');
   }
-  function attributeRow(a, d) {
+  function attributeRow(a, d, weightProfile) {
     const body = d.bodyAdj[a.id] || 0, fac = d.facAdj[a.id] || 0, cv = a.currentValue;
     const selected = ui.selectedAttr === a.id;
     const tag = (v) => v === 0 ? '' : `<span class="font-bold text-sm min-w-3 ${v < 0 ? 'text-state-error' : 'text-state-success'}">${v > 0 ? '+' : ''}${v}</span>`;
     const nameEl = a.isKeyAttribute
-      ? `<span class="text-accent-light text-sm font-medium">${esc(attrName(a.id))}</span><span class="text-accent-light text-sm">★</span>`
+      ? `<span class="key-attribute-name text-accent-light text-sm font-medium">${esc(attrName(a.id))}</span><img src="assets/ui/key-attribute.png" alt="Key Attribute" class="key-attribute-icon" />`
       : `<span class="text-sm font-medium text-t-secondary">${esc(attrName(a.id))}</span>`;
+    const weight = weightProfile ? (weightProfile.weights[a.id] || 0) : null;
+    const weightText = weight == null ? '' : weight === 0 ? '0%' : `${(weight * 100).toFixed(weight * 100 >= 1 ? 1 : 2)}%`;
+    const weightEl = weight == null ? '' : `<span class="attr-weight ${weight === 0 ? 'is-zero' : ''}"
+      title="${weightProfile.mode === 'minmax' ? `Combined coefficient for ${esc(weightProfile.weightedPositions.join(' / '))}` : `OVR coefficient for ${esc(weightProfile.positions[0])}`}">${weightText}</span>`;
     return `
-      <button type="button" data-attr="${a.id}" aria-pressed="${selected}" class="w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
-        <span class="flex items-center justify-between mb-1.5 w-full">
-          <span class="flex items-center gap-2">${nameEl}</span>
-          <span class="flex items-center gap-1.5">${tag(body)}${tag(fac)}<span class="text-base font-bold text-white">${cv}</span></span>
+      <button type="button" data-attr="${a.id}" aria-pressed="${selected}" class="attribute-row w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
+        <span class="attribute-row-top flex items-center justify-between mb-1.5 w-full">
+          <span class="attribute-row-name flex items-center gap-2">${nameEl}</span>
+          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${tag(body)}${tag(fac)}<span class="attribute-value text-base font-bold text-white">${cv}</span></span>
         </span>
         ${attrMeter(a, cv)}
       </button>`;
@@ -268,54 +293,67 @@
 
   // -------------------- painel de detalhe do atributo (direita, sempre) --------------------
   const placeholder = (msg) => `<div class="p-6 h-full flex items-center justify-center min-h-[300px]"><p class="text-t-disabled text-sm text-center">${esc(msg)}</p></div>`;
-  const panelHead = (title) => `<div class="p-4 border-b border-b-primary"><h3 class="font-bold text-t-secondary tracking-wide">${esc(title)}</h3></div>`;
+  const panelHead = (title, accent) => `<header class="detail-panel-head ${accent ? 'is-accent' : ''} p-4 border-b border-b-primary"><h3 class="font-bold text-t-secondary tracking-wide">${esc(title)}</h3></header>`;
+  const apIcon = (className = '') => `<img src="assets/ui/ap.png" alt="AP" class="ap-icon ${className}" />`;
   function renderDetailPanel(d) {
     const panel = $('#panel');
-    if (!d.arch) { panel.innerHTML = placeholder('Select an archetype to begin.'); return; }
-    if (ui.selectedAttr) { panel.innerHTML = attrEditor(d); return; }
+    if (!d.arch) { panel.dataset.kind = 'empty'; panel.innerHTML = placeholder('Select an archetype to begin.'); return; }
+    if (ui.selectedAttr) { panel.dataset.kind = 'attribute'; panel.innerHTML = attrEditor(d); return; }
+    panel.dataset.kind = 'summary';
     panel.innerHTML = buildSummary(d);
   }
   // Sem atributo selecionado a coluna de 400px ficava só com um aviso cinza — agora carrega
   // o que o usuário precisa pra decidir o próximo ponto de AP.
   function buildSummary(d) {
-    const apPct = d.ap.total ? C.clamp((d.ap.spent / d.ap.total) * 100, 0, 100) : 0;
     const overalls = C.overallMapForValues(build.positions || [], d, null);
-    const ovrRows = Object.keys(overalls).length
-      ? Object.entries(overalls).map(([pos, ovr]) =>
-        `<div class="flex items-center justify-between text-sm"><span class="text-t-muted">${pos}</span><span class="font-bold" style="color:${C.barColor(ovr)}">${ovr}</span></div>`).join('')
-      : '<p class="text-[11px] text-t-disabled">Pick a position above to see the estimated OVR.</p>';
+    const overallEntries = Object.entries(overalls);
+    const overall = overallEntries.length ? Math.min(...overallEntries.map(([, value]) => value)) : '—';
+    const ovrRows = overallEntries.length
+      ? overallEntries.map(([pos, value]) =>
+        `<span class="build-summary-position"><span>${pos}</span><strong>${value}</strong></span>`).join('')
+      : '<span class="build-summary-empty">Pick a position to calculate OVR.</span>';
     const sigs = C.signatureSlots(build, d.categories).filter((s) => s.playStyleId);
     const equipped = build.playstyles || [];
     const row = (label, value, cls) => `<div class="flex items-center justify-between text-sm"><span class="text-t-muted">${label}</span><span class="font-bold ${cls || 'text-white'}">${value}</span></div>`;
-    const icon = (id, plus) => `<img src="playstyles/${plus ? 'plus/' : ''}${psIcon(id)}" alt="${esc(psName(id))}" title="${esc(psName(id))}${plus ? '+' : ''} — ${esc(psDesc(id))}" class="w-7 h-7 object-contain" />`;
+    const playStyleItem = (id, plus) => `
+      <span class="build-summary-playstyle">
+        <img src="playstyles/${plus ? 'plus/' : ''}${psIcon(id)}" alt="" aria-hidden="true" />
+        <span>${esc(psName(id))}${plus ? '+' : ''}</span>
+      </span>`;
     return `
-      ${panelHead('Build Summary')}
-      <div class="p-4 space-y-4">
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-t-muted uppercase font-bold">Attribute Points</span>
-            <span class="${d.ap.available < 0 ? 'text-state-error' : 'text-t-secondary'}">${d.ap.spent} / ${d.ap.total}</span>
+      ${panelHead('Build Summary', true)}
+      <div class="build-summary-panel">
+        <section class="build-summary-overall">
+          <span class="build-summary-kicker">${overallEntries.length > 1 ? 'Lowest estimated OVR' : 'Estimated OVR'} <small>±1</small></span>
+          <strong>${overall}</strong>
+          <div class="build-summary-positions">${ovrRows}</div>
+        </section>
+
+        <section class="build-summary-ap">
+          <div class="build-summary-ap-line">
+            <span>Attribute Points available:</span>
+            <strong>${apIcon()}${d.ap.available}</strong>
           </div>
-          <span class="attr-bar"><span class="attr-bar-fill" style="width:${apPct}%;background-color:${d.ap.available < 0 ? '#ef4444' : '#10b981'}"></span></span>
-          <div class="text-[11px] text-t-disabled">${d.ap.available} AP left at level ${build.level}</div>
-        </div>
-        <div class="bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
-          <div class="text-[11px] text-t-muted uppercase font-bold">Estimated OVR <span class="normal-case font-normal">±1</span></div>
-          ${ovrRows}
-        </div>
-        <div class="bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
+          <p class="${d.ap.available < 0 ? 'is-warning' : ''}">
+            <span aria-hidden="true">${d.ap.available < 0 ? '!' : '✓'}</span>
+            ${d.ap.spent} of ${d.ap.total} AP used at level ${build.level}
+          </p>
+        </section>
+
+        <section class="build-summary-details">
           ${row('Body', `${build.height}cm / ${build.weight}kg`)}
           ${d.accel ? row('AcceleRATE', d.accel, 'text-state-info') : ''}
           ${row('PlayStyle slots', `${equipped.length} / ${d.slots.unlocked}`)}
           ${row('Signature +', `${d.slots.signaturePlus} / 4`)}
           ${row('Facilities', `${d.facilities.cost} / ${d.facilities.budget}`, d.facilities.cost > d.facilities.budget ? 'text-state-error' : 'text-white')}
-        </div>
-        ${sigs.length || equipped.length ? `
-          <div>
-            <div class="text-[11px] text-t-muted uppercase font-bold mb-1.5">Equipped</div>
-            <div class="flex flex-wrap gap-1.5">${sigs.map((s) => icon(s.playStyleId, s.isPlus)).join('')}${equipped.map((id) => icon(id, false)).join('')}</div>
-          </div>` : ''}
-        <p class="text-[11px] text-t-disabled text-center">Select an attribute to edit it here.</p>
+        </section>
+
+        <section class="build-summary-playstyles">
+          <h4>Equipped PlayStyles</h4>
+          ${sigs.length || equipped.length
+            ? `<div>${sigs.map((s) => playStyleItem(s.playStyleId, s.isPlus)).join('')}${equipped.map((id) => playStyleItem(id, false)).join('')}</div>`
+            : '<p>No PlayStyles equipped.</p>'}
+        </section>
       </div>`;
   }
   function attrEditor(d) {
@@ -325,25 +363,50 @@
     const nextCost = C.apCostNextPoint(attr);
     const atMax = attr.currentValue >= attr.maxValue, atMin = attr.currentValue <= attr.baseValue;
     const canAfford = nextCost != null && d.ap.available >= nextCost;
+    const relatedPlayStyles = D.playstyles.filter((playStyle) =>
+      (playStyle.requirements || []).some((requirement) => requirement.attributeId === attr.id)
+    );
     const adj = (label, v) => `<div class="flex justify-between text-sm"><span class="text-t-muted">${label}</span><span class="font-bold ${v < 0 ? 'text-state-error' : v > 0 ? 'text-state-success' : 'text-t-secondary'}">${v > 0 ? '+' : ''}${v}</span></div>`;
+    const relatedItem = (playStyle) => {
+      const eligible = C.playstyleEligible(playStyle, d.purchased, d.facilities.unlocks);
+      return `<span class="attribute-related-item ${eligible ? 'is-eligible' : ''}">
+        <span class="attribute-related-icon">
+          <img src="playstyles/${psIcon(playStyle.id)}" alt="" aria-hidden="true" />
+          ${eligible ? '<span aria-label="Requirements met">✓</span>' : ''}
+        </span>
+        <span>${esc(psName(playStyle.id))}</span>
+      </span>`;
+    };
     return `
-      ${panelHead(attrName(attr.id) + (attr.isKeyAttribute ? ' ★' : ''))}
-      <div class="p-4 space-y-4">
-        <div class="flex items-end justify-between">
-          <div><div class="text-xs text-t-muted uppercase">Current</div><div id="attr-readout" class="text-4xl font-bold" style="color:${C.barColor(attr.currentValue)}">${attr.currentValue}</div></div>
-          <div class="text-right text-sm text-t-muted"><div>Base ${attr.baseValue}</div><div>Max ${attr.maxValue}</div><div class="uppercase text-xs mt-1">tier ${attr.tier.replace('tier', '').replace('star', '★')}</div></div>
+      ${panelHead(attrName(attr.id), true)}
+      <div class="attribute-editor p-4 space-y-4">
+        <div class="attribute-editor-overview flex items-end justify-between">
+          <div><div class="attribute-editor-kicker text-xs text-t-muted uppercase">Current</div><div id="attr-readout" class="attribute-editor-value text-4xl font-bold" style="color:${C.barColor(attr.currentValue)}">${attr.currentValue}</div></div>
+          <div class="attribute-editor-limits text-right text-sm text-t-muted"><div>Base ${attr.baseValue}</div><div>Max ${attr.maxValue}</div><div class="uppercase text-xs mt-1">tier ${attr.tier.replace('tier', '').replace('star', '★')}</div></div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="attribute-editor-controls flex items-center gap-2">
           <button data-attr-dec aria-label="Decrease ${esc(attrName(attr.id))}" class="flex-1 py-2 rounded-lg font-bold ${atMin ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}" ${atMin ? 'disabled' : ''}>−</button>
           <input data-attr-range type="range" aria-label="${esc(attrName(attr.id))}" min="${attr.baseValue}" max="${attr.maxValue}" value="${attr.currentValue}" class="flex-[3] accent-btn-blue" />
           <button data-attr-inc aria-label="Increase ${esc(attrName(attr.id))}" class="flex-1 py-2 rounded-lg font-bold ${atMax || !canAfford ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-btn-blue hover:bg-btn-blue-hover text-white'}" ${atMax || !canAfford ? 'disabled' : ''}>+</button>
         </div>
-        <div class="text-center text-xs ${!atMax && !canAfford ? 'text-state-error' : 'text-t-muted'}">${atMax ? 'At maximum' : !canAfford ? `Not enough AP (need ${nextCost})` : `Next +1 costs <span class="font-bold text-accent-light">${nextCost} AP</span>`}</div>
-        <div class="flex gap-2">
+        <div class="attribute-editor-next-cost">
+          <span>Next upgrade cost:</span>
+          <strong>${apIcon()}${atMax || nextCost == null ? '—' : nextCost}</strong>
+        </div>
+        <div class="attribute-editor-cost ${!atMax && !canAfford ? 'is-warning' : ''}">
+          <span aria-hidden="true">${atMax || canAfford ? '✓' : '!'}</span>
+          ${atMax ? 'Attribute is at maximum' : !canAfford ? 'Not enough Attribute Points' : `${d.ap.available} Attribute Points available`}
+        </div>
+        <div class="attribute-editor-actions flex gap-2">
           <button data-attr-base class="flex-1 py-1.5 text-xs rounded-lg bg-app-card hover:bg-b-primary text-t-secondary font-bold">Reset to base</button>
           <button data-attr-maximize class="flex-1 py-1.5 text-xs rounded-lg bg-app-card hover:bg-b-primary text-t-secondary font-bold">Max out</button>
         </div>
-        <div class="bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
+        ${relatedPlayStyles.length ? `
+          <section class="attribute-related">
+            <h4>Related PlayStyles</h4>
+            <div>${relatedPlayStyles.map(relatedItem).join('')}</div>
+          </section>` : ''}
+        <div class="attribute-editor-breakdown bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
           ${adj('Body', body)}${adj('Facilities', fac)}
           <div class="flex justify-between text-sm border-t border-b-primary pt-1.5 mt-1.5"><span class="text-t-secondary font-medium">Effective</span><span class="font-bold text-white">${eff}</span></div>
         </div>
@@ -1052,7 +1115,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // clique no backdrop
       if (!t) return;
       // Os chips são preferência de otimizador, não estado de build: mudam a URL mas não gastam
@@ -1094,6 +1157,7 @@
       if (t.dataset.arch) return setArchetype(t.dataset.arch);
       if (t.dataset.filter) { ui.filter = t.dataset.filter; return renderArchetypes(); }
       if (t.dataset.pos) return togglePosition(t.dataset.pos);
+      if (t.id === 'btn-weights') { ui.showWeights = !ui.showWeights; return render(); }
       if (t.id === 'btn-optimize') return openModal('optimize');
       if (t.id === 'opt-run') return runOptimize();
       if (t.hasAttribute('data-modal')) return openModal(t.dataset.modal);

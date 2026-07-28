@@ -5,12 +5,16 @@
   const BEAM_WIDTH = 4000;
   const LAYER_EXPANSION_LIMIT = 40000;
 
-  const clampOverall = (raw) => Math.max(1, Math.min(99, Math.floor(raw + EPS)));
+  const overallOffset = (problem) => {
+    const offset = Number(problem.overallOffset);
+    return Number.isFinite(offset) ? offset : 0;
+  };
+  const clampOverall = (problem, raw) => Math.max(1, Math.min(99, Math.floor(raw + EPS) + overallOffset(problem)));
   const addVectors = (a, b) => a.map((value, index) => value + (b[index] || 0));
 
   function evaluate(problem, state) {
     const raws = addVectors(problem.baseRaws, state.gains);
-    const overalls = raws.map(clampOverall);
+    const overalls = raws.map((raw) => clampOverall(problem, raw));
     return {
       raws,
       overalls,
@@ -44,7 +48,8 @@
 
   function targetDeficit(problem, state) {
     const ev = evaluate(problem, state);
-    return ev.raws.reduce((total, raw) => total + Math.max(0, problem.targetOverall - raw), 0);
+    const rawTarget = problem.targetOverall - overallOffset(problem);
+    return ev.raws.reduce((total, raw) => total + Math.max(0, rawTarget - raw), 0);
   }
 
   function betterMin(problem, candidate, incumbent) {

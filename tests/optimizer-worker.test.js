@@ -6,7 +6,8 @@ function enumerate(problem) {
   let best = null;
   const walk = (index, cost, gains, choices) => {
     if (index === problem.attrs.length) {
-      const overalls = problem.baseRaws.map((raw, i) => Math.max(1, Math.min(99, Math.floor(raw + gains[i] + 1e-9))));
+      const offset = Number.isFinite(problem.overallOffset) ? problem.overallOffset : 0;
+      const overalls = problem.baseRaws.map((raw, i) => Math.max(1, Math.min(99, Math.floor(raw + gains[i] + 1e-9) + offset)));
       const candidate = { cost, choices: choices.slice(), min: Math.min(...overalls), sum: overalls.reduce((a, b) => a + b, 0) };
       if (problem.mode === 'min') {
         if (candidate.min < problem.targetOverall) return;
@@ -60,6 +61,18 @@ test('multi minimum-AP solver matches exhaustive search', () => {
   assert.equal(actual.feasible, true);
   assert.equal(actual.added, expected.cost);
   assert.equal(actual.objective.min >= 81, true);
+});
+
+test('multi solver applies the same game OVR calibration as the main calculator', () => {
+  const { MultiOverallSolver } = createContext(['js/optimizer-worker.js']);
+  const problem = fixture('min', 80);
+  problem.overallOffset = -1;
+  const expected = enumerate(problem);
+  const actual = MultiOverallSolver.solve(problem);
+  assert.equal(actual.status, 'optimal');
+  assert.equal(actual.feasible, true);
+  assert.equal(actual.added, expected.cost);
+  assert.equal(actual.objective.min, expected.min);
 });
 
 test('bounded solver labels results as best-found', () => {

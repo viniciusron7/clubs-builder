@@ -61,8 +61,9 @@
       outfield: 'old_analise_overall/pesos_overall.json',
       goalkeeper: 'data/eafc26_ut_players.csv (Common/Rare base GK)',
     },
-    formula: 'floor(intercept + sum(weight[attr] * purchased_attr))',
+    formula: 'clamp(floor(intercept + sum(weight[attr] * purchased_attr)) + gameCalibrationOffset)',
     rounding: 'floor',
+    gameCalibrationOffset: -1,
     limits: { min: 1, max: 99 },
     trainingRange: { outfieldOverall: [47, 91], goalkeeperOverall: [47, 89] },
     metrics: {

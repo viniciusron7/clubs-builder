@@ -5,32 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
     <title>FC 26 Pro Clubs Builder</title>
     <meta name="description" content="Create FC 26 Pro Clubs builds: pick an archetype, tune attributes, body, facilities and playstyles, then share via URL." />
+    <meta name="theme-color" content="#07131d" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="manifest" href="site.webmanifest" />
     <link rel="stylesheet" href="css/vendor.css" />
     <link rel="stylesheet" href="css/app.css" />
   </head>
   <body class="flex flex-col min-h-screen bg-app-bg text-t-primary">
-    <!-- ===================== HEADER ===================== -->
-    <header class="sticky top-0 z-50 bg-surface border-b border-b-primary">
-      <div class="max-w-screen-2xl mx-auto px-4 sm:px-6">
-        <div class="flex items-center justify-between h-14">
-          <div class="flex items-center gap-3">
-            <h1 class="text-lg sm:text-xl font-bold"><a href="./" class="text-accent-light hover:text-accent transition-colors">Pro Clubs Builder</a></h1>
-          </div>
-          <div class="flex items-center gap-2">
-            <button id="btn-share" class="flex items-center gap-1.5 rounded-lg bg-btn-blue hover:bg-btn-blue-hover text-white font-bold px-3 py-1.5 text-sm transition-colors">SHARE LINK</button>
-            <button id="btn-image" class="flex items-center gap-1.5 rounded-lg bg-surface border border-b-primary hover:bg-app-card text-t-secondary font-bold px-3 py-1.5 text-sm transition-colors">Save Image</button>
-          </div>
-        </div>
-      </div>
-    </header>
+    <a class="skip-link" href="#main-content">Skip to builder</a>
 
-    <main class="flex-grow bg-gradient-to-br from-app-bg to-app-panel">
+    <main id="main-content" tabindex="-1" class="app-main flex-grow bg-gradient-to-br from-app-bg to-app-panel">
       <!-- ===================== SUMMARY / CONTROLS BAR ===================== -->
-      <div class="sticky top-14 z-40 bg-app-bg/95 backdrop-blur border-b border-b-primary">
+      <div class="build-toolbar bg-app-bg/95 border-b border-b-primary">
         <div class="max-w-[1600px] mx-auto px-3 sm:px-6 py-3">
-          <div id="summary-bar" class="flex flex-wrap items-center justify-between gap-3">
+          <div id="summary-bar" class="summary-layout">
             <!-- preenchido por JS -->
           </div>
         </div>
@@ -38,42 +27,42 @@
 
       <div class="max-w-[1600px] mx-auto">
         <!-- ===================== ARCHETYPE SELECTION ===================== -->
-        <section class="border-b border-b-primary">
-          <div class="max-w-[1600px] mx-auto px-3 sm:px-6 py-4">
+        <section class="builder-section archetype-section border-b border-b-primary">
+          <div class="builder-section-inner max-w-[1600px] mx-auto px-3 sm:px-6 py-4">
             <div id="archetype-filters" class="flex items-center gap-1.5 sm:gap-2 mb-3 flex-wrap"></div>
             <div id="archetype-grid" class="arch-row"></div>
           </div>
         </section>
 
         <!-- ===================== POSITIONS + OVERALL ===================== -->
-        <section class="border-b border-b-primary">
+        <section class="builder-section positions-section border-b border-b-primary">
           <div class="max-w-[1600px] mx-auto px-3 sm:px-6 py-3">
             <div id="positions-bar" class="flex flex-wrap items-center justify-between gap-3"></div>
           </div>
         </section>
 
         <!-- ===================== TABS ===================== -->
-        <div class="border-b border-b-primary">
+        <div class="builder-tools border-b border-b-primary">
           <div class="max-w-[1600px] mx-auto px-3 sm:px-6">
             <div id="tabs" class="flex flex-wrap items-center gap-1 sm:gap-2 py-3"></div>
           </div>
         </div>
 
         <!-- ===================== CONTENT: attributes (left) + panel (right) ===================== -->
-        <div class="p-3 sm:p-4 lg:p-6">
-          <div class="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 lg:gap-6">
+        <div class="attribute-workspace p-3 sm:p-4 lg:p-6">
+          <div class="attribute-stage grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 lg:gap-6">
             <div id="attributes" class="attr-grid"></div>
-            <aside class="lg:sticky lg:top-32 self-start">
-              <div id="panel" class="bg-app-panel rounded-xl border border-b-primary min-h-[300px]"></div>
+            <aside class="detail-aside lg:sticky lg:top-32 self-start">
+              <div id="panel" class="detail-panel bg-app-panel rounded-xl border border-b-primary min-h-[300px]"></div>
             </aside>
           </div>
         </div>
       </div>
     </main>
 
-    <footer class="bg-app-panel border-t border-b-primary">
+    <footer class="app-footer bg-app-panel border-t border-b-primary">
       <div class="max-w-[1600px] mx-auto px-6 py-4 text-center text-xs text-t-muted">
-        Vanilla rewrite — FC 26 Pro Clubs Builder. Data from EA SPORTS FC 26.
+        FC 26 Pro Clubs Builder · Independent build planning tool.
       </div>
     </footer>
 
