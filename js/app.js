@@ -438,7 +438,13 @@
   }
   function renderModal(d) {
     const root = $('#modal-root'), box = $('#modal-box');
-    if (!ui.modal || !d.arch) { root.classList.add('hidden'); root.classList.remove('flex'); box.innerHTML = ''; return; }
+    if (!ui.modal || !d.arch) {
+      root.classList.add('hidden');
+      root.classList.remove('flex');
+      box.innerHTML = '';
+      delete box.dataset.modalKind;
+      return;
+    }
     let title = '', body = '';
     if (ui.modal === 'body') { title = L.tabs.body; body = bodyModal(d); }
     else if (ui.modal === 'playStyles') { title = L.tabs.playStyles; body = playStylesModal(d); }
@@ -446,6 +452,7 @@
     else if (ui.modal === 'optimize') { title = 'Optimize Overall'; body = optimizeModal(d); }
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
     else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
+    box.dataset.modalKind = ui.modal;
     box.innerHTML = modalShell(title, body);
     root.classList.remove('hidden'); root.classList.add('flex');
     if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus devolve depois se havia um campo
@@ -850,20 +857,16 @@
       .join('');
     const card = (p) => {
       const info = utBuildable(p, d);
-      const status = `${info.cost} AP${info.capped ? ` · cap ${info.capped}` : ''}`;
       return `
         <button data-ut-player="${p.id}" ${info.buildable ? '' : 'disabled'} class="ut-card ${info.buildable ? 'ut-card-buildable' : 'ut-card-locked'}"
+          data-ut-positions="${esc(p.positions.join(' '))}"
+          aria-label="${esc(`${p.name}, overall ${p.overall}, ${p.positions.join(' / ')}, ${info.cost} AP${info.buildable ? ', buildable' : ', not enough AP'}`)}"
           title="${esc(p.name)} · ${esc(p.positions.join(' / '))} · ${info.cost} AP of ${totalAP} available${info.capped ? ` · ${info.capped} attribute(s) capped by the archetype` : ''}">
-          <div class="ut-card-img">${p.cardImagePath ? `<img loading="lazy" src="${esc(utImage(p))}" alt="" />` : ''}</div>
-          <span class="ut-ovr">${p.overall}</span>
-          <div class="ut-card-main"><span class="ut-name">${esc(p.name)}</span></div>
-          <div class="ut-pos">${esc(p.positions.join(' / '))}</div>
-          <div class="ut-cost ${info.buildable ? 'text-state-success' : 'text-t-disabled'}">${esc(status)}</div>
+          <img loading="lazy" src="${esc(utImage(p))}" alt="${esc(`${p.name} — ${p.overall} ${p.positions.join(' / ')}`)}" />
         </button>`;
     };
     const list = shown.length
-      ? `<div class="ut-list-head"><span></span><span>OVR</span><span>Player</span><span>Pos</span><span>Cost</span></div>
-         <div class="ut-list">${shown.map(card).join('')}</div>
+      ? `<div class="ut-list">${shown.map(card).join('')}</div>
          ${matches.length > shown.length ? `<p class="ut-more">Showing the first ${shown.length} of ${matches.length} — narrow it down with the search or the position filter.</p>` : ''}`
       : `<p class="ut-empty">No player matches these filters.${ui.utOnlyBuildable ? ' Try “All” to include players you cannot afford yet.' : ''}</p>`;
 

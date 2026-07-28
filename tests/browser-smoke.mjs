@@ -265,18 +265,36 @@ await waitFor(`!/Loading/.test(document.querySelector('#modal-box').innerText)`,
 const utBuildableRows = await evaluate(`document.querySelectorAll('.ut-card').length`);
 assert.equal(utBuildableRows > 0, true);
 assert.equal(await evaluate(`document.querySelectorAll('.ut-card-locked').length`), 0);
+const utCardLayout = await evaluate(`(() => {
+  const card = document.querySelector('.ut-card');
+  const image = card && card.querySelector(':scope > img');
+  const rect = card && card.getBoundingClientRect();
+  return card && image ? {
+    childCount: card.children.length,
+    width: rect.width,
+    height: rect.height,
+    imageWidth: image.getBoundingClientRect().width,
+  } : null;
+})()`);
+assert.ok(utCardLayout);
+assert.equal(utCardLayout.childCount, 1);
+assert.equal(utCardLayout.width >= 180, true);
+assert.equal(utCardLayout.height > utCardLayout.width, true);
+assert.equal(Math.abs(utCardLayout.imageWidth - utCardLayout.width) < 1, true);
 await click('[data-ut-only="0"]');
 assert.equal(await evaluate(`document.querySelectorAll('.ut-card-locked').length`) > 0, true);
 await click('[data-ut-only="1"]');
 assert.equal(await evaluate(`document.querySelectorAll('.ut-card').length`), utBuildableRows);
 await click('[data-ut-pos="CB"]');
-assert.equal(await evaluate(`[...document.querySelectorAll('.ut-card .ut-pos')].every((el) => /\\bCB\\b/.test(el.textContent))`), true);
+assert.equal(await evaluate(`[...document.querySelectorAll('.ut-card')].every((el) => /\\bCB\\b/.test(el.dataset.utPositions))`), true);
 await click('[data-ut-pos="all"]');
 assert.equal(await evaluate(`document.querySelectorAll('.ut-card').length`), utBuildableRows);
 await evaluate(`document.querySelector('#ut-search').focus()`);
 await typeText('kane');
 assert.equal(await evaluate(`document.querySelector('#ut-search').value`), 'kane');
 assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'ut-search');
+await waitFor(`[...document.querySelectorAll('.ut-card > img')].every((image) => image.complete)`, 20000);
+assert.deepEqual(await evaluate(`[...document.querySelectorAll('.ut-card > img')].filter((image) => image.naturalWidth === 0).map((image) => image.src)`), []);
 await screenshot('/tmp/clubs-builder-ut-players.png');
 await evaluate(`(() => { const el = document.querySelector('#ut-search'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 await delay(120);

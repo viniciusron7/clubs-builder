@@ -99,8 +99,8 @@ window.Calc = (function () {
 
   // AcceleRATE — portado verbatim. Recebe valores JÁ ajustados pelo corpo + altura.
   function accelType(agility, strength, acceleration, height) {
-    if (agility >= 65 && agility - strength >= 10 && acceleration >= 80 && height <= 182) return 'EXPLOSIVE';
-    if (strength >= 65 && strength - agility >= 4 && acceleration >= 40 && height >= 183) return 'LENGTHY';
+    if (agility >= 65 && agility - strength >= 10 && acceleration >= 80 && height <= 184) return 'EXPLOSIVE';
+    if (strength >= 65 && strength - agility >= 4 && acceleration >= 40 && height >= 185) return 'LENGTHY';
     return 'CONTROLLED';
   }
 

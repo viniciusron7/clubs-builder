@@ -381,105 +381,53 @@ button.ps-row:disabled { cursor: not-allowed; opacity: .62; }
 .ut-empty { padding: 2.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--color-text-muted); }
 .ut-more { padding-top: 0.5rem; text-align: center; font-size: 0.6875rem; color: var(--color-text-disabled); }
 
-/* lista de atletas Ultimate Team */
+/* galeria de cartas Ultimate Team */
+#modal-box[data-modal-kind="utplayers"] {
+  max-width: min(96vw, 90rem);
+}
 .ut-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  max-height: 68vh;
-  overflow-y: auto;
-  padding-right: 0.25rem;
-}
-.ut-list-head {
   display: grid;
-  grid-template-columns: 38px 46px minmax(0, 1fr) 104px 98px;
-  gap: 0.625rem;
-  align-items: center;
-  padding: 0 0.625rem 0.25rem;
-  color: var(--color-text-disabled);
-  font-size: 0.625rem;
-  font-weight: 800;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  grid-template-columns: repeat(auto-fill, minmax(11.25rem, 1fr));
+  gap: 1.15rem .9rem;
+  align-items: start;
+  padding: .35rem 0 1rem;
 }
-.ut-list-head span:last-child { text-align: right; }
 .ut-card {
-  display: grid;
-  grid-template-columns: 38px 46px minmax(0, 1fr) 104px 98px;
-  align-items: center;
-  gap: 0.625rem;
+  display: block;
   width: 100%;
-  min-height: 52px;
-  padding: 0.25rem 0.625rem;
-  border: 1px solid var(--color-border-primary);
-  border-radius: 0.5rem;
-  background: var(--color-bg-panel);
-  text-align: left;
-  transition: opacity .15s, filter .15s, transform .15s, border-color .15s, background .15s;
+  aspect-ratio: 0.72;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  transition: opacity .18s ease, filter .18s ease, transform .18s ease;
+  transform-origin: 50% 70%;
 }
 .ut-card-buildable:hover {
-  transform: translateY(-1px);
-  background: var(--color-bg-card);
-  border-color: color-mix(in srgb, rgb(var(--color-state-success)) 55%, transparent);
+  z-index: 1;
+  transform: translateY(-.2rem) scale(1.035);
+  filter: drop-shadow(0 .8rem 1.15rem rgba(0, 0, 0, .38));
+}
+.ut-card-buildable:focus-visible {
+  outline: 2px solid var(--color-accent-primary-light);
+  outline-offset: .2rem;
+  border-radius: .8rem;
 }
 .ut-card-locked {
-  opacity: .62;
-  filter: grayscale(.55);
+  opacity: .42;
+  filter: grayscale(.8);
   cursor: not-allowed;
 }
-.ut-card-img {
-  width: 34px;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.ut-card-img img {
-  width: 34px;
-  max-width: 34px;
-  max-height: 46px;
+.ut-card > img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-}
-.ut-card-main { min-width: 0; }
-.ut-ovr {
-  color: var(--color-accent-light);
-  font-weight: 800;
-  font-size: 0.95rem;
-  line-height: 1;
-  text-align: center;
-}
-.ut-name {
-  display: block; /* era span inline: overflow/ellipsis não valiam e o nome invadia a coluna de custo */
-  min-width: 0;
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.875rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ut-pos {
-  color: var(--color-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: .02em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ut-cost {
-  justify-self: end;
-  font-size: 0.75rem;
-  font-weight: 800;
-  white-space: nowrap;
+  filter: drop-shadow(0 .45rem .7rem rgba(0, 0, 0, .28));
 }
 @media (max-width: 640px) {
-  .ut-list-head { grid-template-columns: 34px 40px minmax(0, 1fr) 74px; }
-  .ut-list-head span:nth-child(4) { display: none; }
-  .ut-card { grid-template-columns: 34px 40px minmax(0, 1fr) 74px; gap: 0.5rem; }
-  .ut-pos { display: none; }
-  .ut-cost { font-size: 0.6875rem; }
+  .ut-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .85rem .45rem;
+  }
 }
 
 /* variantes de opacidade ausentes no vendor.css (usadas pelo app) */
