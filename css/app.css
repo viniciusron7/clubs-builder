@@ -696,43 +696,43 @@ button:not(:disabled):active {
 
 .summary-signatures {
   display: flex;
-  min-height: 2.25rem;
-  padding-left: 1rem;
+  min-height: 3.25rem;
+  padding-inline: 1.25rem;
   border-left: 1px solid var(--color-border-subtle);
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: .15rem;
+  gap: .2rem;
 }
 
 .summary-signature-slots {
   display: flex;
   align-items: center;
-  gap: .22rem;
+  gap: .35rem;
 }
 
 .summary-signature-slot {
   position: relative;
   display: grid;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 2.6rem;
+  height: 2.6rem;
   padding: 0;
   border: 0;
   place-items: center;
-  border-radius: .28rem;
+  border-radius: .4rem;
   background: transparent;
   transition: transform 140ms ease, opacity 140ms ease, background-color 140ms ease;
 }
 
 .summary-signature-slot img {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2.4rem;
+  height: 2.4rem;
   object-fit: contain;
 }
 
 .summary-signature-slot.is-unlocked img {
-  width: 1.85rem;
-  height: 1.85rem;
+  width: 2.5rem;
+  height: 2.5rem;
 }
 
 .summary-signature-slot.is-locked {
@@ -1158,7 +1158,7 @@ button:not(:disabled):active {
   .summary-signatures {
     grid-column: 1 / -1;
     min-height: 0;
-    padding: .55rem 0 0;
+    padding: .7rem 0 .1rem;
     border-top: 1px solid var(--color-border-subtle);
     border-left: 0;
     flex-direction: row;
@@ -1166,8 +1166,8 @@ button:not(:disabled):active {
   }
 
   .summary-signature-slot {
-    width: 2rem;
-    height: 2rem;
+    width: 2.6rem;
+    height: 2.6rem;
   }
 
   .summary-controls {
