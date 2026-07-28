@@ -4,6 +4,38 @@
  * componentes nativos. Reaproveita as CSS vars (--color-*) do vendor.css.
  * ========================================================================== */
 
+@font-face {
+  font-family: "Cruyff Sans";
+  src: url("../assets/fonts/cruyff-sans-regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 100 499;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cruyff Sans";
+  src: url("../assets/fonts/cruyff-sans-medium.woff") format("woff");
+  font-style: normal;
+  font-weight: 500 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cruyff Sans Condensed";
+  src: url("../assets/fonts/cruyff-sans-condensed-regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 100 499;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cruyff Sans Condensed";
+  src: url("../assets/fonts/cruyff-sans-condensed-medium.woff") format("woff");
+  font-style: normal;
+  font-weight: 500 900;
+  font-display: swap;
+}
+
 /* sliders */
 input[type="range"] {
   accent-color: var(--color-btn-blue);
@@ -413,6 +445,8 @@ button:not(:disabled) { cursor: pointer; }
  * Visual refresh — clearer hierarchy, calmer palette and predictable mobile UI.
  * ========================================================================== */
 :root {
+  --font-ui: "Cruyff Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+  --font-display: "Cruyff Sans Condensed", "Arial Narrow", var(--font-ui);
   --color-bg-app: #07131d;
   --color-bg-surface: #091722;
   --color-bg-panel: #0e1e2b;
@@ -455,12 +489,27 @@ html {
 body {
   min-height: 100dvh;
   overflow-x: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, Arial, sans-serif;
+  font-family: var(--font-ui);
   font-feature-settings: "kern" 1, "tnum" 1;
   background:
     radial-gradient(circle at 8% -10%, rgba(85, 214, 170, 0.11), transparent 25rem),
     radial-gradient(circle at 92% 24%, rgba(72, 105, 122, 0.1), transparent 34rem),
     var(--color-bg-app);
+}
+
+:is(h1, h2, h3, .builder-tab, .summary-player-name) {
+  font-family: var(--font-display);
+}
+
+:is(
+  .overall-badge,
+  .summary-level,
+  .summary-ap,
+  .attribute-value,
+  .attribute-editor-value,
+  .build-summary-overall
+) {
+  font-family: var(--font-display);
 }
 
 body::before {
@@ -605,7 +654,7 @@ button:not(:disabled):active {
 
 .summary-layout {
   display: grid;
-  grid-template-columns: minmax(14rem, 1fr) auto auto;
+  grid-template-columns: minmax(11rem, 1fr) auto auto auto;
   align-items: center;
   gap: 1rem;
 }
@@ -642,7 +691,67 @@ button:not(:disabled):active {
 .summary-physique {
   min-height: 2.25rem;
   padding: 0 1rem;
-  border-inline: 1px solid var(--color-border-subtle);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.summary-signatures {
+  display: flex;
+  min-height: 2.25rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--color-border-subtle);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .15rem;
+}
+
+.summary-signature-slots {
+  display: flex;
+  align-items: center;
+  gap: .22rem;
+}
+
+.summary-signature-slot {
+  position: relative;
+  display: grid;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  place-items: center;
+  border-radius: .28rem;
+  background: transparent;
+  transition: transform 140ms ease, opacity 140ms ease, background-color 140ms ease;
+}
+
+.summary-signature-slot img {
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: contain;
+}
+
+.summary-signature-slot.is-unlocked img {
+  width: 1.85rem;
+  height: 1.85rem;
+}
+
+.summary-signature-slot.is-locked {
+  opacity: .68;
+}
+
+.summary-signature-slot.is-locked img {
+  filter: grayscale(1) saturate(0);
+}
+
+.summary-signature-slot.is-empty {
+  border: 1px solid var(--color-border-subtle);
+  opacity: .4;
+}
+
+.summary-signature-slot:not(.is-empty):hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, .055);
+  transform: translateY(-1px);
 }
 
 .summary-tag {
@@ -1000,7 +1109,7 @@ button:not(:disabled):active {
 
 @media (max-width: 1023px) {
   .summary-layout {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .summary-controls {
@@ -1044,6 +1153,21 @@ button:not(:disabled):active {
     min-height: 0;
     padding: 0;
     border: 0;
+  }
+
+  .summary-signatures {
+    grid-column: 1 / -1;
+    min-height: 0;
+    padding: .55rem 0 0;
+    border-top: 1px solid var(--color-border-subtle);
+    border-left: 0;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .summary-signature-slot {
+    width: 2rem;
+    height: 2rem;
   }
 
   .summary-controls {
@@ -1520,7 +1644,7 @@ body::before {
 }
 
 .attribute-workspace .attr-grid {
-  gap: 2rem 1.35rem;
+  gap: 2rem 1.65rem;
 }
 
 .attribute-workspace .attribute-card {
@@ -1596,7 +1720,7 @@ body::before {
 
 .attribute-workspace .attribute-row-name > span:first-child {
   overflow: hidden;
-  color: #cfd2d3;
+  color: #b2b2b2;
   font-size: .78rem;
   font-weight: 500;
   line-height: 1.15;

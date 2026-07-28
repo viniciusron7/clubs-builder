@@ -71,6 +71,20 @@ await waitFor(`document.readyState === 'complete' && !!window.Calc && !!window.S
 assert.equal(await evaluate('window.OVERALL_MODEL.version'), 2);
 
 await click('[data-arch="fwd_finisher"]');
+assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot').length`), 4);
+assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot.is-locked').length`), 4);
+assert.equal(await evaluate(`[...document.querySelectorAll('.summary-signature-slot img')].every((image) => !image.src.includes('/plus/'))`), true);
+const loadedFonts = await evaluate(`document.fonts.ready.then(async () => ({
+  ui: (await document.fonts.load('400 16px "Cruyff Sans"')).length,
+  display: (await document.fonts.load('500 16px "Cruyff Sans Condensed"')).length,
+  body: getComputedStyle(document.body).fontFamily,
+  heading: getComputedStyle(document.querySelector('#attributes h2')).fontFamily,
+}))`);
+assert.ok(loadedFonts.ui > 0);
+assert.ok(loadedFonts.display > 0);
+assert.match(loadedFonts.body, /Cruyff Sans/);
+assert.match(loadedFonts.heading, /Cruyff Sans Condensed/);
+
 // The LVL field must swallow a whole multi-digit number typed key by key without losing focus.
 await evaluate(`(() => { const el = document.querySelector('#level-input'); el.focus(); el.select(); })()`);
 await typeText('85');
@@ -80,6 +94,8 @@ assert.equal(await evaluate(`document.activeElement && document.activeElement.id
 await evaluate(`document.querySelector('#level-input').blur()`);
 await evaluate(`(() => { const el = document.querySelector('#level-input'); el.value = '100'; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 await delay(75);
+assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot.is-unlocked').length`), 4);
+assert.equal(await evaluate(`[...document.querySelectorAll('.summary-signature-slot img')].every((image) => image.src.includes('/plus/'))`), true);
 await click('[data-pos="ST"]');
 const attributesBeforeImpossibleTarget = await evaluate(`JSON.stringify(Share.fromUrl().attributes)`);
 await click('#btn-optimize');

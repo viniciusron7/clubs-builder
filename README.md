@@ -70,6 +70,7 @@ clubs-builder/
   index.html          # entrada do site no GitHub Pages
   site.webmanifest    # metadados de instalação/PWA
   assets/
+    fonts/            # família Cruyff Sans usada pela interface
     ui/               # ícones próprios da interface (AP e Key Attribute)
   archetypes/         # ícones SVG dos arquétipos
   playstyles/         # ícones PNG dos PlayStyles e PlayStyles+

@@ -137,6 +137,17 @@
            <div class="summary-label text-xs text-t-muted uppercase">${L.position[arch.position.toLowerCase()] || arch.position}</div>
          </div>`
       : `<div class="text-sm text-t-muted">Select an archetype</div>`;
+    const signatureIcons = C.signatureSlots(build, d.categories).map((slot) => {
+      const id = slot.playStyleId;
+      if (!id) return '<span class="summary-signature-slot is-empty" aria-hidden="true"></span>';
+      const state = slot.isPlus ? 'is-unlocked' : 'is-locked';
+      const icon = `playstyles/${slot.isPlus ? 'plus/' : ''}${psIcon(id)}`;
+      const status = slot.isPlus ? 'PlayStyle+ unlocked' : `Unlocks as PlayStyle+ at level ${slot.plusLevel}`;
+      return `<button type="button" data-modal="playStyles" class="summary-signature-slot ${state}"
+        title="${esc(psName(id))}: ${status}" aria-label="${esc(psName(id))}, ${status}">
+        <img src="${icon}" alt="" aria-hidden="true" />
+      </button>`;
+    }).join('');
     $('#summary-bar').innerHTML = `
       <div class="summary-player flex items-center gap-2.5">${archInfo}</div>
       <div class="summary-physique flex items-center gap-4">
@@ -145,6 +156,10 @@
           <div class="font-bold text-sm text-white">${build.height}cm / ${build.weight}kg</div>
         </div>
         ${accel ? `<div class="summary-metric text-center leading-tight"><div class="summary-label text-xs text-t-muted uppercase">AcceleRATE</div>${accel}</div>` : ''}
+      </div>
+      <div class="summary-signatures">
+        <span class="summary-label">PlayStyles+</span>
+        <div class="summary-signature-slots">${signatureIcons}</div>
       </div>
       <div class="summary-controls flex items-center gap-3">
         <div class="summary-progress flex items-center gap-3">
