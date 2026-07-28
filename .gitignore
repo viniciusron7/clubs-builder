@@ -47,3 +47,4 @@ references/
 
 # Dataset completo opcional usado apenas na validação estatística local
 data/*.csv
+ut_players_80_old.json
