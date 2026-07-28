@@ -10,7 +10,6 @@ window.Calc = (function () {
   const NON_KEY_ATTRIBUTES = new Set(['skill_moves', 'weak_foot']);
 
   const archetype = (id) => byId(D.archetypes, id);
-  const facility = (id) => byId(D.facilities, id) || byId(D.aiFacilities, id);
   const playstyle = (id) => byId(D.playstyles, id);
 
   // ---- atributos: categorias base com modifiers do archetype + desconto de tier p/ key ----
@@ -105,46 +104,8 @@ window.Calc = (function () {
     return 'CONTROLLED';
   }
 
-  // ---- facilities ----
-  function facilityLevel(fac, star) {
-    return fac && fac.levels[star] ? fac.levels[star] : null;
-  }
-  function facilityAdjustments(facs) {
-    const map = {};
-    for (const fid in facs) {
-      const fac = facility(fid);
-      const lv = facilityLevel(fac, facs[fid]);
-      if (!lv) continue;
-      for (const b of lv.attributeBoosts) map[b.attributeId] = (map[b.attributeId] || 0) + b.value;
-    }
-    return map;
-  }
-  function facilityCost(facs) {
-    let total = 0;
-    for (const fid in facs) {
-      const fac = facility(fid);
-      const lv = facilityLevel(fac, facs[fid]);
-      if (lv) total += lv.cost;
-    }
-    return total;
-  }
-  function facilityUnlocks(facs) {
-    const set = new Set();
-    for (const fid in facs) {
-      const fac = facility(fid);
-      if (!fac) continue;
-      for (let i = 1; i <= facs[fid]; i++) {
-        const lv = fac.levels[i];
-        if (lv && lv.playstyle) set.add(lv.playstyle);
-      }
-    }
-    return set;
-  }
-  const budget = (clubLevel) => D.clubLevelBudgets[clubLevel] || 0;
-
   // ---- playstyles ----
-  function playstyleEligible(ps, purchased, unlocks) {
-    if (unlocks.has(ps.id)) return true;
+  function playstyleEligible(ps, purchased) {
     if (!ps.requirements || !ps.requirements.length) return true;
     return ps.requirements.every((r) => (purchased[r.attributeId] || 0) >= r.minValue);
   }
@@ -754,20 +715,15 @@ window.Calc = (function () {
 
   function normalizeBuild(input) {
     const source = input && typeof input === 'object' ? input : {};
-    const validClubLevels = Object.keys(D.clubLevelBudgets).map(Number).sort((a, b) => a - b);
-    const requestedClubLevel = Number.isFinite(+source.clubLevel) ? Math.round(+source.clubLevel) : validClubLevels[0];
-    const clubLevel = validClubLevels.reduce((best, level) => Math.abs(level - requestedClubLevel) < Math.abs(best - requestedClubLevel) ? level : best, validClubLevels[0]);
     const arch = archetype(source.archetypeId);
     const out = {
       archetypeId: arch ? arch.id : null,
       level: clamp(Number.isFinite(+source.level) ? Math.round(+source.level) : 1, 1, D.maxLevel),
-      clubLevel,
       height: D.defaultHeight,
       weight: D.defaultWeight,
       attributes: {},
-      facilities: {},
-      aiFacilities: {},
       playstyles: [],
+      playstylePurchases: {},
       signatures: {},
       positions: [],
       disabledAttrs: [],
@@ -802,47 +758,60 @@ window.Calc = (function () {
       }
       attrs.forEach((attr) => { if (values[attr.id] > attr.baseValue) out.attributes[attr.id] = values[attr.id]; });
 
-      let remainingFacilityBudget = budget(out.clubLevel);
-      const sanitizeFacilities = (selected, definitions) => {
-        const clean = {};
-        Object.keys(selected || {}).forEach((id) => {
-          const fac = definitions.find((entry) => entry.id === id);
-          if (!fac) return;
-          let star = clamp(Math.round(+selected[id] || 0), 0, fac.levels.length - 1);
-          while (star > 0 && fac.levels[star].cost > remainingFacilityBudget) star--;
-          if (star > 0) {
-            clean[id] = star;
-            remainingFacilityBudget -= fac.levels[star].cost;
-          }
-        });
-        return clean;
-      };
-      out.facilities = sanitizeFacilities(source.facilities, D.facilities);
-      out.aiFacilities = sanitizeFacilities(source.aiFacilities, D.aiFacilities);
-
       const purchased = Object.fromEntries(attrs.map((attr) => [attr.id, values[attr.id]]));
-      const unlocks = facilityUnlocks(out.facilities);
       const slots = unlockedSlots(out.level);
       const seenPlaystyles = new Set();
       for (const id of Array.isArray(source.playstyles) ? source.playstyles : []) {
         const ps = playstyle(id);
-        if (!ps || seenPlaystyles.has(id) || unlocks.has(id) || out.playstyles.length >= slots) continue;
-        if (!playstyleEligible(ps, purchased, unlocks)) continue;
+        if (!ps || seenPlaystyles.has(id) || out.playstyles.length >= slots) continue;
+        if (!playstyleEligible(ps, purchased)) continue;
         seenPlaystyles.add(id);
         out.playstyles.push(id);
       }
 
+      const currentCategories = cats.map((category) => ({
+        ...category,
+        attributes: category.attributes.map((attr) => ({ ...attr, currentValue: values[attr.id] })),
+      }));
       const sourceSignatures = source.signatures && typeof source.signatures === 'object' ? source.signatures : {};
       const signatureKeys = Object.keys(sourceSignatures).sort((a, b) => +a - +b);
       for (const slot of signatureKeys) {
         const numericSlot = +slot;
         const spec = D.specializations.find((entry) => entry.id === sourceSignatures[slot]);
-        if (!Number.isInteger(numericSlot) || numericSlot < 0 || numericSlot > 3 || !spec || spec.archetypeId !== arch.id || !specializationUnlocked(spec, cats.map((category) => ({
-          ...category,
-          attributes: category.attributes.map((attr) => ({ ...attr, currentValue: values[attr.id] })),
-        })))) continue;
+        if (!Number.isInteger(numericSlot) || numericSlot < 0 || numericSlot > 3 || !spec || spec.archetypeId !== arch.id || !specializationUnlocked(spec, currentCategories)) continue;
         out.signatures[numericSlot] = spec.id;
         break;
+      }
+
+      // Arquétipo/especialização já equipam esses PlayStyles fora dos slots regulares.
+      const signatureIds = new Set(signatureSlots(out, currentCategories)
+        .filter((slot) => slot.playStyleId)
+        .map((slot) => slot.playStyleId));
+      out.playstyles = out.playstyles.filter((id) => !signatureIds.has(id));
+
+      // Guarda apenas a parcela de atributos efetivamente comprada por cada Quick Unlock.
+      // O recibo permite vender depois sem apagar melhorias manuais feitas antes ou depois.
+      const sourcePurchases = source.playstylePurchases && typeof source.playstylePurchases === 'object'
+        ? source.playstylePurchases
+        : {};
+      for (const id of Object.keys(sourcePurchases)) {
+        if (!playstyle(id)) continue;
+        const receipt = sourcePurchases[id];
+        if (!receipt || typeof receipt !== 'object') continue;
+        const before = {}, after = {};
+        const sourceBefore = receipt.before && typeof receipt.before === 'object' ? receipt.before : {};
+        const sourceAfter = receipt.after && typeof receipt.after === 'object' ? receipt.after : {};
+        for (const attrId of Object.keys(sourceAfter)) {
+          const attr = attrById[attrId];
+          if (!attr || !Number.isFinite(+sourceAfter[attrId])) continue;
+          const afterValue = clamp(Math.round(+sourceAfter[attrId]), attr.baseValue, values[attrId]);
+          const beforeRaw = Number.isFinite(+sourceBefore[attrId]) ? Math.round(+sourceBefore[attrId]) : attr.baseValue;
+          const beforeValue = clamp(beforeRaw, attr.baseValue, afterValue);
+          if (afterValue <= beforeValue) continue;
+          before[attrId] = beforeValue;
+          after[attrId] = afterValue;
+        }
+        if (Object.keys(after).length) out.playstylePurchases[id] = { before, after };
       }
 
       if (arch.position === 'GK') {
@@ -861,13 +830,11 @@ window.Calc = (function () {
     const comparable = {
       archetypeId: source.archetypeId || null,
       level: source.level != null ? source.level : 1,
-      clubLevel: source.clubLevel != null ? source.clubLevel : validClubLevels[0],
       height: source.height != null ? source.height : D.defaultHeight,
       weight: source.weight != null ? source.weight : D.defaultWeight,
       attributes: source.attributes || {},
-      facilities: source.facilities || {},
-      aiFacilities: source.aiFacilities || {},
       playstyles: source.playstyles || [],
+      playstylePurchases: source.playstylePurchases || {},
       signatures: source.signatures || {},
       positions: source.positions || [],
       disabledAttrs: source.disabledAttrs || [],
@@ -887,15 +854,12 @@ window.Calc = (function () {
       }),
     }));
     const bodyAdj = bodyAdjustments(arch, build.height, build.weight);
-    const facs = build.facilities || {};
-    const aiFacs = build.aiFacilities || {};
-    const facAdj = facilityAdjustments(facs);
 
     const purchased = {};
     const eff = {};
     cats.forEach((c) => c.attributes.forEach((a) => {
       purchased[a.id] = a.currentValue;
-      eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0) + (facAdj[a.id] || 0), 1, 99);
+      eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0), 1, 99);
     }));
 
     // AP gasto
@@ -910,32 +874,22 @@ window.Calc = (function () {
       ? accelType(accAttr('agility'), accAttr('strength'), accAttr('acceleration'), build.height)
       : null;
 
-    const unlocks = facilityUnlocks(facs);
     return {
       arch,
       categories: cats,
       bodyAdj,
-      facAdj,
       purchased,
       effective: eff,
       ap: { total, spent, available: total - spent },
       accel,
-      facilities: {
-        playerCost: facilityCost(facs),
-        aiCost: facilityCost(aiFacs),
-        cost: facilityCost(facs) + facilityCost(aiFacs),
-        budget: budget(build.clubLevel),
-        unlocks,
-      },
       slots: { unlocked: unlockedSlots(build.level), signaturePlus: signaturePlusCount(build.level) },
     };
   }
 
   return {
-    archetype, facility, playstyle,
+    archetype, playstyle,
     baseCategories, apCostAt, apCost, totalAP, apCostNextPoint, affordableTarget,
     bodyAdjustments, accelType,
-    facilityAdjustments, facilityCost, facilityUnlocks, budget,
     playstyleEligible, unlockedSlots, signaturePlusCount, barColor,
     archetypeSpecializations, specializationUnlocked, requirementUnlockPlan, quickUnlockCost, signatureSlots, curVal, findAttr,
     pesoFor, pesoForPositions, overallWeightProfile, overallRawForPosition, overallRawForPositions, overallRawForValues,

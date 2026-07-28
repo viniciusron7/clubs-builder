@@ -27,12 +27,10 @@ test('displayed OVR applies the in-game minus-one calibration', () => {
   assert.equal(Calc.overallForPosition('ST', derived), expected);
 });
 
-test('level, AP, facilities and specialization tables match the level-100 ruleset', () => {
+test('level, AP and specialization tables match the level-100 ruleset', () => {
   const { Calc, DATA } = createContext();
   assert.equal(DATA.maxLevel, 100);
   assert.equal(Calc.totalAP(100), 3167);
-  assert.equal(DATA.facilities.length, 34);
-  assert.equal(DATA.aiFacilities.length, 42);
   DATA.archetypes.forEach((arch) => assert.equal(DATA.specializations.filter((spec) => spec.archetypeId === arch.id).length, 3));
   assert.equal(DATA.specializations.some((spec) => spec.id === 'spider' && spec.archetypeId === 'gk_shot_stopper'), true);
 });
@@ -49,12 +47,12 @@ test('attribute bar colors follow the four configured value ranges', () => {
   assert.equal(Calc.barColor(99), '#07F468');
 });
 
-test('position order, body and facilities do not change estimated OVR', () => {
-  const { Calc, DATA } = createContext();
+test('position order and body do not change estimated OVR', () => {
+  const { Calc } = createContext();
   const base = defaultBuild({ positions: ['ST', 'CAM'], attributes: { finishing: 92, reactions: 90, short_passing: 88 } });
-  const bodyAndFacility = { ...base, height: 190, weight: 90, facilities: { [DATA.facilities[0].id]: 1 } };
+  const changedBody = { ...base, height: 190, weight: 90 };
   const first = Calc.derive(base);
-  const second = Calc.derive(bodyAndFacility);
+  const second = Calc.derive(changedBody);
   assert.deepEqual(Calc.overallMapForValues(['ST', 'CAM'], first, null), Calc.overallMapForValues(['CAM', 'ST'], first, null));
   assert.equal(Calc.overallForPosition('ST', first), Calc.overallForPosition('ST', second));
   assert.equal(Calc.overallForPosition('CAM', first), Calc.overallForPosition('CAM', second));
@@ -113,12 +111,26 @@ test('Skill Moves and Weak Foot are never treated as key attributes', () => {
   }
 });
 
-test('PlayStyle requirements use purchased values while facility grants remain automatic', () => {
+test('PlayStyle requirements use purchased values', () => {
   const { Calc } = createContext();
   const ps = { id: 'test', requirements: [{ attributeId: 'acceleration', minValue: 90 }] };
-  assert.equal(Calc.playstyleEligible(ps, { acceleration: 89 }, new Set()), false);
-  assert.equal(Calc.playstyleEligible(ps, { acceleration: 90 }, new Set()), true);
-  assert.equal(Calc.playstyleEligible(ps, { acceleration: 1 }, new Set(['test'])), true);
+  assert.equal(Calc.playstyleEligible(ps, { acceleration: 89 }), false);
+  assert.equal(Calc.playstyleEligible(ps, { acceleration: 90 }), true);
+});
+
+test('signature PlayStyles are equipped automatically and cannot occupy regular slots', () => {
+  const { Calc } = createContext();
+  const base = defaultBuild({ archetypeId: 'fwd_finisher' });
+  const derived = Calc.derive(base);
+  const signatureIds = Calc.signatureSlots(base, derived.categories).map((slot) => slot.playStyleId);
+  const finessePlan = Calc.requirementUnlockPlan(Calc.playstyle('finesse_shot'), derived.categories);
+  const normalized = Calc.normalizeBuild({
+    ...base,
+    attributes: finessePlan.values,
+    playstyles: [signatureIds[0], 'finesse_shot'],
+  }).build;
+  assert.equal(normalized.playstyles.includes(signatureIds[0]), false);
+  assert.equal(normalized.playstyles.includes('finesse_shot'), true);
 });
 
 test('PlayStyle Quick Unlock uses central AP costs and rejects impossible requirements', () => {
@@ -145,37 +157,36 @@ test('PlayStyle Quick Unlock uses central AP costs and rejects impossible requir
   assert.deepEqual(Object.keys(impossible.values), []);
 });
 
-test('normalization enforces AP, shared facility budget, one specialization and GK position', () => {
+test('normalization enforces AP, one specialization and GK position', () => {
   const { Calc, DATA } = createContext();
-  const playerFacility = DATA.facilities[0];
-  const aiFacility = DATA.aiFacilities[0];
   const normalized = Calc.normalizeBuild(defaultBuild({
     archetypeId: 'gk_shot_stopper',
     level: 1,
-    clubLevel: 1,
     attributes: Object.fromEntries(DATA.categories.flatMap((category) => category.attributes.map((attr) => [attr.id, 99]))),
-    facilities: { [playerFacility.id]: playerFacility.levels.length - 1 },
-    aiFacilities: { [aiFacility.id]: aiFacility.levels.length - 1 },
     playstyles: DATA.playstyles.slice(0, 9).map((ps) => ps.id),
     signatures: { 0: 'spider', 1: 'octopus' },
     positions: ['ST', 'CB'],
   })).build;
   const derived = Calc.derive(normalized);
   assert.equal(derived.ap.available >= 0, true);
-  assert.equal(derived.facilities.cost <= derived.facilities.budget, true);
   assert.equal(normalized.playstyles.length, 0);
   assert.equal(Object.keys(normalized.signatures).length <= 1, true);
   assert.deepEqual([...normalized.positions], ['GK']);
 });
 
-test('AI facilities share budget but never boost the player', () => {
-  const { Calc, DATA } = createContext();
-  const ai = DATA.aiFacilities.find((facility) => facility.levels.length > 1);
-  const base = Calc.derive(defaultBuild());
-  const withAi = Calc.derive(defaultBuild({ aiFacilities: { [ai.id]: 1 } }));
-  assert.deepEqual(withAi.facAdj, base.facAdj);
-  assert.equal(withAi.facilities.aiCost > 0, true);
-  assert.equal(withAi.facilities.cost, withAi.facilities.playerCost + withAi.facilities.aiCost);
+test('removed Facilities fields are ignored by normalization and derivation', () => {
+  const { Calc } = createContext();
+  const normalized = Calc.normalizeBuild(defaultBuild({
+    clubLevel: 10,
+    facilities: { legacy_player_facility: 3 },
+    aiFacilities: { legacy_ai_facility: 3 },
+  })).build;
+  assert.equal('clubLevel' in normalized, false);
+  assert.equal('facilities' in normalized, false);
+  assert.equal('aiFacilities' in normalized, false);
+  const derived = Calc.derive(normalized);
+  assert.equal('facAdj' in derived, false);
+  assert.equal('facilities' in derived, false);
 });
 
 test('UT target plans use the same tiers and cap values at archetype maximums', () => {

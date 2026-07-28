@@ -23,20 +23,16 @@ pelo canvas e pelo clipboard quando a página é aberta diretamente por `file://
   slider, custo do próximo ponto e breakdown.
 - **Body** — altura/peso (limitados ao archetype) ajustam atributos pela fórmula real;
   cálculo do **AcceleRATE** (Explosive/Lengthy/Controlled).
-- **Facilities** — 34 instalações de jogador e 42 de IA, com níveis (estrelas) e um
-  **orçamento compartilhado por nível de clube**. Facilities de IA afetam apenas os companheiros
-  controlados pela IA; Facilities de jogador aplicam boosts de partida e podem conceder PlayStyles.
 - **PlayStyles** (modal) — 4 **signature** (viram "+" nos níveis 30/50/75/95) + 9 slots regulares
-  por nível (1/10/20/40/60/70/80/90/95) + playstyles desbloqueados por facilities. PlayStyles
-  ainda bloqueados têm **Quick Unlock**, que compra os requisitos com o cálculo central de AP e equipa
-  tudo em uma única ação, respeitando máximo do arquétipo, AP disponível e slots.
+  por nível (1/10/20/40/60/70/80/90/95). PlayStyles ainda bloqueados têm **Quick Unlock**,
+  que compra os requisitos com o cálculo central de AP, respeitando máximo do arquétipo e AP disponível.
 - **Specializations** (modal) — 3 por archetype, com requisitos de atributo; desbloqueiam ao atingir
   ou via **Quick Unlock** (gasta AP). Somente uma Specialization pode ficar ativa por vez, substituindo
   um dos 4 slots de signature pelo seu PlayStyle+.
 - **Posições + OVR estimado** — escolha 1+ posições de linha; GK é automático para goleiros.
   Cada posição é calculada independentemente por `js/weights.js` usando somente atributos comprados:
-  `OVR = floor(intercepto + Σ peso·atributo) - 1`, limitado a 1–99. Altura, peso e Facilities alteram
-  atributos efetivos de partida, não o OVR estimado do lobby. A tolerância esperada é ±1.
+  `OVR = floor(intercepto + Σ peso·atributo) - 1`, limitado a 1–99. Altura e peso alteram atributos
+  efetivos de partida, não o OVR estimado do lobby. A tolerância esperada é ±1.
 - O modelo v2 foi validado nas cartas base Common/Rare: 93,43% exato e 99,995% dentro de ±1
   em 19.363 jogadores de linha; 88,05% exato e 100% ±1 nos 2.528 jogadores 75+; 98,05% exato
   e 100% ±1 em 2.303 goleiros.
@@ -57,10 +53,10 @@ pelo canvas e pelo clipboard quando a página é aberta diretamente por `file://
 - **Atletas UT** — lista compacta 80+, custo calculado pelos mesmos tiers do editor e cap no máximo
   do arquétipo.
 - **Desfazer/refazer** — botões e atalhos Ctrl/Cmd+Z, Ctrl/Cmd+Y e Cmd+Shift+Z.
-- **Compartilhar via URL** (`?b=...`, formato v2 com Facilities de IA e leitura de links v1) e
+- **Compartilhar via URL** (`?b=...`, formato v2 com leitura de links v1) e
   **salvar como imagem** com os OVRs estimados por posição.
 
-As 4 abas (Body / PlayStyles / Specializations / Facilities) abrem **modais** (como no original);
+As 3 abas (Body / PlayStyles / Specializations) abrem **modais**;
 a área principal mostra os atributos + o painel de detalhe do atributo selecionado.
 
 ## Estrutura
@@ -79,7 +75,7 @@ clubs-builder/
     app.css           # complementos (utilitários ausentes + ajustes)
   js/
     data.js           # TODOS os dados do jogo (extraídos e normalizados)
-    calc.js           # mecânicas puras (AP, body, facilities, elegibilidade…)
+    calc.js           # mecânicas puras (AP, body, PlayStyles, elegibilidade…)
     optimizer-worker.js # solver multi-position fora da thread da interface
     history.js        # histórico imutável de undo/redo
     share.js          # URL (encode/decode) + export de imagem (canvas)
@@ -91,7 +87,7 @@ clubs-builder/
 ## Notas
 
 - Os dados foram extraídos fielmente dos chunks do build original (archetypes, atributos,
-  facilities, playstyles, tabelas de custo de AP e de AP por nível, traduções EN).
+  PlayStyles, tabelas de custo de AP e de AP por nível, traduções EN).
 - A interface é só em inglês (como o conteúdo-base).
 - O encoding da URL é próprio (compacto), **não** é compatível com o clubsbuilder.com.
 - Execute `node --test tests/*.test.js` para validar cálculos, modelo, solver,

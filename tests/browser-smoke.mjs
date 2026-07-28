@@ -53,6 +53,17 @@ const click = async (selector) => {
   assert.equal(clicked, true, `Missing element: ${selector}`);
   await delay(75);
 };
+const hover = async (selector) => {
+  const point = await evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  assert.ok(point, `Missing element: ${selector}`);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
+  await delay(180);
+};
 const typeText = async (text) => {
   for (const character of text) {
     await send('Input.insertText', { text: character });
@@ -140,44 +151,87 @@ assert.equal(await evaluate(`(() => {
 const buildBeforePlaystyleUnlock = await evaluate(`JSON.stringify(Share.fromUrl())`);
 const spentBeforePlaystyleUnlock = await evaluate(`Calc.derive(Share.fromUrl()).ap.spent`);
 await click('[data-modal="playStyles"]');
+assert.equal(await evaluate(`document.querySelector('#modal-box').innerText.includes('Signature')`), false);
+assert.equal(await evaluate(`getComputedStyle(document.querySelector('.playstyle-slots-section')).position`), 'static');
+assert.equal(await evaluate(`getComputedStyle(document.querySelector('.available-playstyles-list')).overflowY`), 'visible');
+assert.equal(await evaluate(`document.querySelectorAll('.available-playstyles-list .ps-row.is-signature').length`), 4);
+assert.equal(await evaluate(`[...document.querySelectorAll('.available-playstyles-list .ps-row.is-signature .ps-row-cost')].every((item) => /Equipped/.test(item.innerText))`), true);
+const availablePlaystyleLayout = await evaluate(`(() => {
+  const row = document.querySelector('.ps-row:not(.is-signature)');
+  const icon = row && row.querySelector('.ps-row-icon');
+  return row && icon ? {
+    height: row.getBoundingClientRect().height,
+    iconWidth: icon.getBoundingClientRect().width,
+    childCount: row.children.length,
+    onlyChildClass: row.firstElementChild.classList.contains('ps-row-icon'),
+    costText: row.querySelector('.ps-row-cost')?.innerText || '',
+    affordable: row.querySelector('.ps-row-cost')?.classList.contains('is-affordable') || false,
+  } : null;
+})()`);
+assert.ok(availablePlaystyleLayout);
+assert.equal(availablePlaystyleLayout.height >= 96, true);
+assert.equal(Math.abs(availablePlaystyleLayout.iconWidth - 42) < 0.1, true);
+assert.equal(availablePlaystyleLayout.childCount, 2);
+assert.equal(availablePlaystyleLayout.onlyChildClass, true);
+assert.match(availablePlaystyleLayout.costText, /AP/);
+assert.equal(availablePlaystyleLayout.affordable, true);
 const playstyleQuickUnlock = await evaluate(`(() => { const button = document.querySelector('[data-ps-unlock]:not([disabled])'); return button ? { id: button.dataset.psUnlock, cost: Number(button.dataset.cost) } : null; })()`);
 assert.ok(playstyleQuickUnlock);
 await click(`[data-ps-unlock="${playstyleQuickUnlock.id}"]`);
 // Quick Unlock buys the requirements only — it must never consume a slot on its own.
 assert.equal(await evaluate(`Share.fromUrl().playstyles.length`), 0);
 assert.equal(await evaluate(`Calc.derive(Share.fromUrl()).ap.spent`), spentBeforePlaystyleUnlock + playstyleQuickUnlock.cost);
-assert.equal(await evaluate(`(() => { const b = Share.fromUrl(); const d = Calc.derive(b); return Calc.playstyleEligible(Calc.playstyle(${JSON.stringify(playstyleQuickUnlock.id)}), d.purchased, d.facilities.unlocks); })()`), true);
+assert.equal(await evaluate(`!!Share.fromUrl().playstylePurchases[${JSON.stringify(playstyleQuickUnlock.id)}]`), true);
+assert.equal(await evaluate(`(() => { const b = Share.fromUrl(); const d = Calc.derive(b); return Calc.playstyleEligible(Calc.playstyle(${JSON.stringify(playstyleQuickUnlock.id)}), d.purchased); })()`), true);
 // Equipping is explicit: click an empty slot, then choose from the picker.
 await click('[data-ps-slot="0"]');
 assert.equal(await evaluate(`!!document.querySelector('.ps-picker')`), true);
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl(), d = Calc.derive(b);
+  const signatures = new Set(Calc.signatureSlots(b, d.categories).map((slot) => slot.playStyleId));
+  return [...document.querySelectorAll('[data-ps-pick]')].every((item) => !signatures.has(item.dataset.psPick));
+})()`), true);
 await click(`[data-ps-pick="${playstyleQuickUnlock.id}"]`);
 assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), true);
 await screenshot('/tmp/clubs-builder-playstyles-quick-unlock.png');
+const playstyleSale = await evaluate(`(() => {
+  const button = document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"]');
+  return button ? {
+    refund: Number(button.dataset.refund),
+    idleText: button.querySelector('.ps-sale-idle')?.innerText || '',
+    actionText: button.querySelector('.ps-sale-action')?.innerText || '',
+    idleOpacity: getComputedStyle(button.querySelector('.ps-sale-idle')).opacity,
+    actionOpacity: getComputedStyle(button.querySelector('.ps-sale-action')).opacity,
+  } : null;
+})()`);
+assert.ok(playstyleSale);
+assert.equal(playstyleSale.refund, playstyleQuickUnlock.cost);
+assert.match(playstyleSale.idleText, /Unlocked/i);
+assert.match(playstyleSale.actionText, /Sell/i);
+assert.equal(playstyleSale.idleOpacity, '1');
+assert.equal(playstyleSale.actionOpacity, '0');
+await hover(`[data-ps-sell="${playstyleQuickUnlock.id}"]`);
+assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"] .ps-sale-idle')).opacity`), '0');
+assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"] .ps-sale-action')).opacity`), '1');
+await screenshot('/tmp/clubs-builder-playstyles-sell-hover.png');
+await click(`[data-ps-sell="${playstyleQuickUnlock.id}"]`);
+assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), false);
+assert.equal(await evaluate(`!!Share.fromUrl().playstylePurchases[${JSON.stringify(playstyleQuickUnlock.id)}]`), false);
+assert.equal(await evaluate(`Calc.derive(Share.fromUrl()).ap.spent`), spentBeforePlaystyleUnlock);
+assert.match(await evaluate(`document.querySelector('#toast').innerText`), /sold.*refunded/i);
 await click('#btn-undo');
-assert.equal(await evaluate(`Share.fromUrl().playstyles.length`), 0);
-await click('#btn-redo');
 assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), true);
-// Clicking the filled slot frees it again.
-await click('[data-ps-slot="0"]');
+await click('#btn-redo');
 assert.equal(await evaluate(`Share.fromUrl().playstyles.length`), 0);
-await click('[data-modal-close]');
-await click('#btn-undo'); // undo the unequip
+await click('#btn-undo'); // undo the sale
 await click('#btn-undo'); // undo the equip
 await click('#btn-undo'); // undo the quick unlock
+await click('[data-modal-close]');
 assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), buildBeforePlaystyleUnlock);
 
-await click('[data-modal="facilities"]');
-await click('[data-fac-view="ai"]');
-assert.match(await evaluate(`document.querySelector('#modal-box').innerText`), /AI Facilities share the club budget/);
-const selectedAi = await evaluate(`(() => { const el = document.querySelector('[data-fac-kind="ai"][data-star="1"]:not([disabled])'); if (!el) return null; const id = el.dataset.fac; el.click(); return id; })()`);
-assert.ok(selectedAi);
-await delay(100);
-assert.equal(await evaluate(`Object.keys(Share.fromUrl().aiFacilities).length`), 1);
-await click('[data-modal-close]');
-await click('#btn-undo');
-assert.equal(await evaluate(`Object.keys(Share.fromUrl().aiFacilities).length`), 0);
-await click('#btn-redo');
-assert.equal(await evaluate(`Object.keys(Share.fromUrl().aiFacilities).length`), 1);
+assert.equal(await evaluate(`document.querySelectorAll('[data-modal="facilities"], [data-fac], [data-fac-view]').length`), 0);
+assert.equal(await evaluate(`document.querySelector('#tabs').innerText.includes('Facilities')`), false);
+assert.equal(await evaluate(`document.querySelector('#panel').innerText.includes('Facilities')`), false);
 
 const attributesBeforeCancel = await evaluate(`JSON.stringify(Share.fromUrl().attributes)`);
 await click('#btn-optimize');
@@ -298,11 +352,10 @@ console.log(JSON.stringify({
   optimizerToast,
   unreachableToast,
   playstyleQuickUnlock,
-  selectedAi,
   exportCanvas,
   mobileLayout,
   mobilePlaystylesLayout,
-  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-mobile-playstyles.png'],
+  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-mobile-playstyles.png'],
 }, null, 2));
 
 socket.close();

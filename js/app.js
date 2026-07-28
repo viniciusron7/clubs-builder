@@ -1,7 +1,7 @@
 /* ============================================================================
  * app.js — Controller do FC 26 Pro Clubs Builder (estado + UI + eventos).
  * Layout fiel ao original: atributos sempre visíveis + painel de detalhe à direita;
- * as abas (Body / PlayStyles / Specializations / Facilities) abrem MODAIS.
+ * as abas (Body / PlayStyles / Specializations) abrem MODAIS.
  * Depende de window.DATA, window.Calc, window.Share.
  * ========================================================================== */
 (function () {
@@ -12,14 +12,14 @@
   // -------------------- estado --------------------
   function defaultBuild() {
     return {
-      archetypeId: null, level: 1, clubLevel: 1,
+      archetypeId: null, level: 1,
       height: D.defaultHeight, weight: D.defaultWeight,
-      attributes: {}, facilities: {}, aiFacilities: {}, playstyles: [], signatures: {}, positions: [], disabledAttrs: [], sumExcluded: [],
+      attributes: {}, playstyles: [], playstylePurchases: {}, signatures: {}, positions: [], disabledAttrs: [], sumExcluded: [],
     };
   }
   let build = defaultBuild();
   const ui = {
-    filter: 'all', selectedAttr: null, modal: null, facilityKind: 'player',
+    filter: 'all', selectedAttr: null, modal: null,
     showWeights: false,
     optimizing: false, optimizeRunId: 0, optimizeController: null,
     psPicker: false,
@@ -249,7 +249,7 @@
 
   // -------------------- tabs (abrem modais) --------------------
   function renderTabs() {
-    const tabs = [['playStyles', L.tabs.playStyles], ['specializations', L.tabs.specializations], ['facilities', L.tabs.facilities], ['body', L.tabs.body]];
+    const tabs = [['playStyles', L.tabs.playStyles], ['specializations', L.tabs.specializations], ['body', L.tabs.body]];
     const disabled = !build.archetypeId;
     $('#tabs').innerHTML = tabs.map(([id, label]) =>
       `<button data-modal="${id}" ${disabled ? 'disabled' : ''} class="builder-tab px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`
@@ -279,7 +279,7 @@
       </section>`).join('');
   }
   function attributeRow(a, d, weightProfile) {
-    const body = d.bodyAdj[a.id] || 0, fac = d.facAdj[a.id] || 0, cv = a.currentValue;
+    const body = d.bodyAdj[a.id] || 0, cv = a.currentValue;
     const selected = ui.selectedAttr === a.id;
     const tag = (v) => v === 0 ? '' : `<span class="font-bold text-sm min-w-3 ${v < 0 ? 'text-state-error' : 'text-state-success'}">${v > 0 ? '+' : ''}${v}</span>`;
     const nameEl = a.isKeyAttribute
@@ -293,7 +293,7 @@
       <button type="button" data-attr="${a.id}" aria-pressed="${selected}" class="attribute-row w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
         <span class="attribute-row-top flex items-center justify-between mb-1.5 w-full">
           <span class="attribute-row-name flex items-center gap-2">${nameEl}</span>
-          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${tag(body)}${tag(fac)}<span class="attribute-value text-base font-bold text-white">${cv}</span></span>
+          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${tag(body)}<span class="attribute-value text-base font-bold text-white">${cv}</span></span>
         </span>
         ${attrMeter(a, cv)}
       </button>`;
@@ -360,7 +360,6 @@
           ${d.accel ? row('AcceleRATE', d.accel, 'text-state-info') : ''}
           ${row('PlayStyle slots', `${equipped.length} / ${d.slots.unlocked}`)}
           ${row('Signature +', `${d.slots.signaturePlus} / 4`)}
-          ${row('Facilities', `${d.facilities.cost} / ${d.facilities.budget}`, d.facilities.cost > d.facilities.budget ? 'text-state-error' : 'text-white')}
         </section>
 
         <section class="build-summary-playstyles">
@@ -374,7 +373,7 @@
   function attrEditor(d) {
     let attr = C.findAttr(d.categories, ui.selectedAttr);
     if (!attr) return placeholder('Select an attribute.');
-    const body = d.bodyAdj[attr.id] || 0, fac = d.facAdj[attr.id] || 0, eff = d.effective[attr.id];
+    const body = d.bodyAdj[attr.id] || 0, eff = d.effective[attr.id];
     const nextCost = C.apCostNextPoint(attr);
     const atMax = attr.currentValue >= attr.maxValue, atMin = attr.currentValue <= attr.baseValue;
     const canAfford = nextCost != null && d.ap.available >= nextCost;
@@ -383,7 +382,7 @@
     );
     const adj = (label, v) => `<div class="flex justify-between text-sm"><span class="text-t-muted">${label}</span><span class="font-bold ${v < 0 ? 'text-state-error' : v > 0 ? 'text-state-success' : 'text-t-secondary'}">${v > 0 ? '+' : ''}${v}</span></div>`;
     const relatedItem = (playStyle) => {
-      const eligible = C.playstyleEligible(playStyle, d.purchased, d.facilities.unlocks);
+      const eligible = C.playstyleEligible(playStyle, d.purchased);
       return `<span class="attribute-related-item ${eligible ? 'is-eligible' : ''}">
         <span class="attribute-related-icon">
           <img src="playstyles/${psIcon(playStyle.id)}" alt="" aria-hidden="true" />
@@ -422,7 +421,7 @@
             <div>${relatedPlayStyles.map(relatedItem).join('')}</div>
           </section>` : ''}
         <div class="attribute-editor-breakdown bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
-          ${adj('Body', body)}${adj('Facilities', fac)}
+          ${adj('Body', body)}
           <div class="flex justify-between text-sm border-t border-b-primary pt-1.5 mt-1.5"><span class="text-t-secondary font-medium">Effective</span><span class="font-bold text-white">${eff}</span></div>
         </div>
       </div>`;
@@ -444,7 +443,6 @@
     if (ui.modal === 'body') { title = L.tabs.body; body = bodyModal(d); }
     else if (ui.modal === 'playStyles') { title = L.tabs.playStyles; body = playStylesModal(d); }
     else if (ui.modal === 'specializations') { title = L.tabs.specializations; body = specializationsModal(d); }
-    else if (ui.modal === 'facilities') { title = L.tabs.facilities; body = facilitiesModal(d); }
     else if (ui.modal === 'optimize') { title = 'Optimize Overall'; body = optimizeModal(d); }
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
     else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
@@ -487,20 +485,9 @@
 
   // ---- PlayStyles modal ----
   function playStylesModal(d) {
-    const sigs = C.signatureSlots(build, d.categories);
-    const unlocks = d.facilities.unlocks;
-
-    // SIGNATURE (4 slots)
-    const sigCell = (s) => {
-      const id = s.playStyleId; if (!id) return '';
-      const icon = `${s.isPlus ? 'playstyles/plus/' : 'playstyles/'}${psIcon(id)}`;
-      return `<div title="${esc(psDesc(id))}" class="bg-app-bg border ${s.specialization ? 'border-feat-special' : 'border-b-primary'} rounded-xl p-3 flex flex-col items-center gap-1.5 relative">
-        ${s.specialization ? '<span class="absolute top-1 right-1 text-[9px] px-1 rounded bg-feat-special text-white font-bold">SPEC</span>' : ''}
-        <img src="${icon}" alt="" class="w-12 h-12 object-contain" />
-        <span class="text-xs text-center text-t-secondary font-medium leading-tight">${esc(psName(id))}${s.isPlus ? '+' : ''}</span>
-        <span class="text-[9px] text-t-disabled">${s.isPlus ? 'PLAYSTYLE+' : 'Lvl ' + s.plusLevel + ' for +'}</span>
-      </div>`;
-    };
+    const signatureById = new Map(C.signatureSlots(build, d.categories)
+      .filter((slot) => slot.playStyleId)
+      .map((slot) => [slot.playStyleId, slot]));
 
     // SLOTS (9 por nível) — clicar num slot vazio abre o seletor; clicar num cheio libera o slot.
     const unlockedSlotCount = d.slots.unlocked;
@@ -518,8 +505,9 @@
     }).join('');
 
     // seletor: só o que já está desbloqueado e ainda não equipado
-    const pickable = D.playstyles.filter((p) => !unlocks.has(p.id) && !build.playstyles.includes(p.id)
-      && C.playstyleEligible(p, d.purchased, unlocks));
+    const pickable = D.playstyles.filter((p) => !signatureById.has(p.id)
+      && !build.playstyles.includes(p.id)
+      && C.playstyleEligible(p, d.purchased));
     const picker = !ui.psPicker ? '' : `
       <div class="ps-picker">
         <div class="ps-picker-head">
@@ -536,36 +524,58 @@
     const byCat = {};
     D.playstyles.forEach((p) => { (byCat[p.category] = byCat[p.category] || []).push(p); });
     const psRow = (p) => {
-      const automatic = unlocks.has(p.id);
-      const eligible = C.playstyleEligible(p, d.purchased, unlocks);
-      const on = build.playstyles.includes(p.id);
+      const signature = signatureById.get(p.id);
+      const eligible = !!signature || C.playstyleEligible(p, d.purchased);
+      const regularSlot = build.playstyles.indexOf(p.id);
+      const on = !!signature || regularSlot >= 0;
+      const receipt = build.playstylePurchases && build.playstylePurchases[p.id];
+      const sale = !signature && (receipt || regularSlot >= 0) ? playstyleSalePlan(p.id, d) : null;
       const unlockPlan = C.requirementUnlockPlan(p, d.categories);
       const canAffordUnlock = unlockPlan.feasible && unlockPlan.cost <= d.ap.available;
       const reqText = (p.requirements || []).map((r) => `${attrName(r.attributeId)} ${r.minValue}`).join(' · ');
-      let action;
-      if (automatic) action = '<span class="ps-tag ps-tag-fac">FACILITY</span>';
-      else if (on) action = `<span class="ps-tag ps-tag-on">SLOT ${build.playstyles.indexOf(p.id) + 1}</span>`;
-      else if (eligible) action = '<span class="ps-tag ps-tag-ready">UNLOCKED</span>';
-      else if (!unlockPlan.feasible) action = '<span class="ps-tag ps-tag-off">UNAVAILABLE</span>';
-      else action = `<button data-ps-unlock="${p.id}" data-cost="${unlockPlan.cost}" ${canAffordUnlock ? '' : 'disabled'} title="${canAffordUnlock ? `Raise ${esc(psName(p.id))} requirements for ${unlockPlan.cost} AP` : `Need ${unlockPlan.cost} AP`}" class="ps-unlock">
-        <span class="hidden sm:inline">QUICK </span>UNLOCK<br><span>${unlockPlan.cost} AP</span></button>`;
-      const state = on ? 'is-on' : automatic ? 'is-fac' : eligible ? 'is-ready' : '';
-      return `<div class="ps-row ${state}" title="${esc(psDesc(p.id))}">
-        <img src="playstyles/${p.iconFileName}" alt="" class="ps-row-icon ${!eligible && !on && !automatic ? 'is-locked' : ''}" />
-        <span class="ps-row-main"><span class="ps-row-name">${esc(psName(p.id))}</span><span class="ps-row-req">${esc(reqText || 'No requirements')}</span></span>
-        ${action}
-      </div>`;
+      const status = signature
+        ? 'Signature PlayStyle equipped'
+        : regularSlot >= 0
+          ? `Equipped in slot ${regularSlot + 1}`
+          : receipt
+            ? `Purchased · sell for ${sale.refund} AP`
+        : eligible
+          ? 'Unlocked'
+          : !unlockPlan.feasible
+            ? 'Unavailable'
+            : canAffordUnlock
+              ? `Quick Unlock for ${unlockPlan.cost} AP`
+              : `Need ${unlockPlan.cost} AP`;
+      const state = signature ? 'is-signature' : sale ? 'is-sellable' : on ? 'is-on' : eligible ? 'is-ready' : canAffordUnlock ? 'is-unlockable' : '';
+      const tag = sale || (!on && !eligible && unlockPlan.feasible) ? 'button' : 'div';
+      const action = sale
+        ? `type="button" data-ps-sell="${p.id}" data-refund="${sale.refund}"`
+        : tag === 'button'
+          ? `type="button" data-ps-unlock="${p.id}" data-cost="${unlockPlan.cost}" ${canAffordUnlock ? '' : 'disabled'}`
+          : '';
+      const costInfo = signature
+        ? '<span class="ps-row-cost is-signature"><strong>0 AP</strong><small>✓ Equipped</small></span>'
+        : sale
+          ? `<span class="ps-row-cost is-sellable">
+              <span class="ps-sale-idle"><strong>0 AP</strong><small>✓ Unlocked</small></span>
+              <span class="ps-sale-action"><strong>${sale.refund} AP</strong><small>Sell · refund</small></span>
+            </span>`
+          : on || eligible
+            ? '<span class="ps-row-cost is-affordable"><strong>0 AP</strong><small>✓ Unlocked</small></span>'
+        : !unlockPlan.feasible
+          ? '<span class="ps-row-cost is-unavailable"><strong>— AP</strong><small>Unavailable</small></span>'
+          : canAffordUnlock
+            ? `<span class="ps-row-cost is-affordable"><strong>${unlockPlan.cost} AP</strong><small>✓ AP available</small></span>`
+            : `<span class="ps-row-cost is-insufficient"><strong>${unlockPlan.cost} AP</strong><small>Need ${Math.max(0, unlockPlan.cost - d.ap.available)} more</small></span>`;
+      return `<${tag} ${action} class="ps-row ${state}" title="${esc(`${psName(p.id)} · ${status} · ${reqText || 'No requirements'} · ${psDesc(p.id)}`)}" aria-label="${esc(`${psName(p.id)}. ${status}`)}">
+        <img src="${signature && signature.isPlus ? 'playstyles/plus/' : 'playstyles/'}${p.iconFileName}" alt="" class="ps-row-icon ${!eligible && !on ? 'is-locked' : ''}" />
+        ${costInfo}
+      </${tag}>`;
     };
 
-    const facList = [...unlocks];
     return `
       <div class="space-y-6">
-        <div>
-          <h3 class="text-accent-light font-bold tracking-wider mb-3">${esc(L.playStyles.signature)}</h3>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">${sigs.map(sigCell).join('')}</div>
-          <p class="text-[11px] text-t-disabled mt-2">Replace a signature slot in the Specializations tab.</p>
-        </div>
-        <div>
+        <div class="playstyle-slots-section">
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-white font-bold tracking-wider">PlayStyle Slots</h3>
             <span class="text-sm ${equippedCount > unlockedSlotCount ? 'text-state-error' : 'text-t-muted'}">${equippedCount} / ${unlockedSlotCount} used</span>
@@ -576,15 +586,9 @@
         </div>
         <div>
           <h3 class="text-white font-bold tracking-wider mb-3">${esc(L.playStyles.available)}</h3>
-          <div class="space-y-3 max-h-[34vh] overflow-y-auto pr-1">
-            ${Object.keys(byCat).map((cat) => `<div><div class="text-[11px] text-t-muted uppercase mb-1.5 font-bold">${esc(catName(cat))}</div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">${byCat[cat].map(psRow).join('')}</div></div>`).join('')}
+          <div class="available-playstyles-list space-y-3">
+            ${Object.keys(byCat).map((cat) => `<div><div class="text-[11px] text-t-muted uppercase mb-2 font-bold">${esc(catName(cat))}</div><div class="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">${byCat[cat].map(psRow).join('')}</div></div>`).join('')}
           </div>
-        </div>
-        <div>
-          <h3 class="text-white font-bold tracking-wider mb-2 text-center text-sm">CLUB FACILITIES PLAYSTYLES</h3>
-          ${facList.length
-            ? `<div class="grid grid-cols-3 sm:grid-cols-5 gap-2">${facList.map((id) => `<div class="bg-app-bg border border-state-success/40 rounded-lg p-2 flex flex-col items-center gap-1"><img src="playstyles/${psIcon(id)}" class="w-8 h-8 object-contain" /><span class="text-[10px] text-center text-t-secondary leading-tight">${esc(psName(id))}</span></div>`).join('')}</div>`
-            : `<p class="text-center text-xs text-t-disabled uppercase tracking-wide py-3">No additional playstyles</p>`}
         </div>
       </div>`;
   }
@@ -624,58 +628,6 @@
         </div>`;
     };
     return `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${specs.map(card).join('')}</div>`;
-  }
-
-  // ---- Facilities modal ----
-  function facilitiesModal(d) {
-    const remaining = d.facilities.budget - d.facilities.cost;
-    const remClass = remaining < 0 ? 'text-state-error' : 'text-state-success';
-    const clubOpts = Object.keys(D.clubLevelBudgets).map((l) => `<option value="${l}" ${+l === build.clubLevel ? 'selected' : ''}>Club Lv ${l}</option>`).join('');
-    const kind = ui.facilityKind === 'ai' ? 'ai' : 'player';
-    const definitions = kind === 'ai' ? D.aiFacilities : D.facilities;
-    const selectedFacilities = kind === 'ai' ? build.aiFacilities : build.facilities;
-    const facCard = (f) => {
-      const star = selectedFacilities[f.id] || 0;
-      const affected = (f.affectedAttributes || []).map(attrName).join(', ');
-      const maxStar = f.levels.length - 1;
-      const stars = [];
-      for (let i = 0; i <= maxStar; i++) {
-        const lv = f.levels[i];
-        const wouldCost = lv.cost - (f.levels[star] ? f.levels[star].cost : 0);
-        const over = i > star && wouldCost > remaining;
-        const active = i === star;
-        // "—" é ausência de upgrade: pintar de azul fazia parecer que estava comprado
-        const cls = active && star > 0 ? 'bg-btn-blue text-white'
-          : active ? 'bg-app-card text-t-secondary'
-          : over ? 'bg-app-bg text-t-disabled cursor-not-allowed'
-          : 'bg-app-bg text-t-muted hover:bg-app-card';
-        const tip = i === 0 ? 'Not purchased' : `${lv.cost} total · ${wouldCost >= 0 ? '+' : ''}${wouldCost} now${over ? ' — over budget' : ''}`;
-        stars.push(`<button data-fac="${f.id}" data-fac-kind="${kind}" data-star="${i}" ${over ? 'disabled' : ''} aria-pressed="${active}" aria-label="${esc(f.name)}: ${i === 0 ? 'no upgrade' : i + ' star'}" title="${esc(tip)}" class="px-2 py-1 rounded text-xs font-bold transition-colors ${cls}">${i === 0 ? '—' : '★'.repeat(i)}</button>`);
-      }
-      const unlocked = kind === 'player' && f.levels[star] && f.levels[star].playstyle;
-      return `
-        <div class="bg-app-bg rounded-lg p-3 border ${star > 0 ? 'border-state-info/40' : 'border-b-primary'}">
-          <div class="flex items-center justify-between mb-1"><span class="text-sm font-bold text-t-secondary">${esc(f.name)}</span><span class="text-xs text-t-muted">${f.levels[star] ? f.levels[star].cost : 0}</span></div>
-          <div class="text-[10px] text-t-muted mb-2 truncate" title="${esc(affected)}">${esc(affected || (kind === 'ai' ? 'AI teammates' : 'Player facility'))}</div>
-          <div class="flex items-center gap-1">${stars.join('')}</div>
-          ${unlocked ? `<div class="text-[10px] text-state-success mt-1.5">${esc(L.facilities.additionalPlaystyle)}: ${esc(psName(unlocked))}</div>` : ''}
-        </div>`;
-    };
-    return `
-      <div class="space-y-3">
-        <div class="flex items-center justify-between gap-2 sticky top-0 bg-app-bg pb-2">
-          <div class="flex items-center gap-2">
-            <select id="club-level" aria-label="Club level" class="bg-app-card border border-b-primary rounded px-2 py-1.5 text-sm text-white">${clubOpts}</select>
-            <div class="flex p-0.5 rounded-lg bg-app-card border border-b-primary">
-              <button data-fac-view="player" aria-pressed="${kind === 'player'}" class="px-3 py-1 rounded-md text-xs font-bold ${kind === 'player' ? 'bg-btn-blue text-white' : 'text-t-muted hover:text-white'}">Player</button>
-              <button data-fac-view="ai" aria-pressed="${kind === 'ai'}" class="px-3 py-1 rounded-md text-xs font-bold ${kind === 'ai' ? 'bg-btn-blue text-white' : 'text-t-muted hover:text-white'}">AI</button>
-            </div>
-          </div>
-          <div class="text-right leading-tight"><div class="text-xs text-t-muted uppercase">${esc(L.facilities.remainingBudget)}</div><div class="font-bold ${remClass}">${remaining} <span class="text-t-disabled text-xs">/ ${d.facilities.budget}</span></div><div class="text-[9px] text-t-disabled">Player ${d.facilities.playerCost} · AI ${d.facilities.aiCost}</div></div>
-        </div>
-        ${kind === 'ai' ? '<p class="text-[11px] text-t-muted">AI Facilities share the club budget and affect AI teammates only.</p>' : ''}
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${definitions.map(facCard).join('')}</div>
-      </div>`;
   }
 
   // ---- Optimize modal ----
@@ -940,16 +892,15 @@
   // -------------------- mutações --------------------
   function setArchetype(id) {
     const arch = C.archetype(id);
-    const hadWork = Object.keys(build.attributes).length || build.playstyles.length
-      || Object.keys(build.facilities).length || Object.keys(build.aiFacilities).length;
+    const hadWork = Object.keys(build.attributes).length || build.playstyles.length || Object.keys(build.playstylePurchases || {}).length;
     const outcome = commitBuildChange(() => {
       build.archetypeId = id;
-      build.attributes = {}; build.facilities = {}; build.aiFacilities = {}; build.playstyles = []; build.signatures = {};
+      build.attributes = {}; build.playstyles = []; build.playstylePurchases = {}; build.signatures = {};
       build.height = C.clamp(build.height, Math.ceil(arch.minHeight), Math.floor(arch.maxHeight));
       build.weight = C.clamp(build.weight, Math.ceil(arch.minWeight), Math.floor(arch.maxWeight));
       ui.selectedAttr = null;
     });
-    if (outcome.changed && hadWork) toast('Archetype changed — attributes, facilities and PlayStyles reset · Ctrl+Z to undo');
+    if (outcome.changed && hadWork) toast('Archetype changed — attributes and PlayStyles reset · Ctrl+Z to undo');
   }
   function adjustAttr(id, delta, mode) {
     const d = C.derive(build);
@@ -966,14 +917,72 @@
       if (v === attr.baseValue) delete build.attributes[id]; else build.attributes[id] = v;
     });
   }
+  function playstyleSalePlan(id, d) {
+    const receipt = build.playstylePurchases && build.playstylePurchases[id];
+    if (!receipt) return { refund: 0, values: {} };
+
+    const floors = {};
+    const protectRequirements = (item) => {
+      for (const requirement of (item && item.requirements) || []) {
+        floors[requirement.attributeId] = Math.max(floors[requirement.attributeId] || 0, requirement.minValue);
+      }
+    };
+    for (const playstyleId of build.playstyles) {
+      if (playstyleId !== id) protectRequirements(C.playstyle(playstyleId));
+    }
+    for (const playstyleId of Object.keys(build.playstylePurchases || {})) {
+      if (playstyleId !== id) protectRequirements(C.playstyle(playstyleId));
+    }
+    for (const specId of Object.values(build.signatures || {})) {
+      protectRequirements(D.specializations.find((spec) => spec.id === specId));
+    }
+
+    let refund = 0;
+    const values = {};
+    for (const attrId of Object.keys(receipt.after || {})) {
+      const attr = C.findAttr(d.categories, attrId);
+      if (!attr) continue;
+      const before = Number(receipt.before && receipt.before[attrId]);
+      const after = Number(receipt.after[attrId]);
+      const delta = Math.max(0, after - before);
+      const target = Math.max(attr.baseValue, floors[attrId] || 0, attr.currentValue - delta);
+      if (target >= attr.currentValue) continue;
+      values[attrId] = target;
+      refund += C.apCost(attr.tier, target, attr.currentValue);
+    }
+    return { refund, values };
+  }
+  function sellPlaystyle(id) {
+    const d = C.derive(build);
+    if (C.signatureSlots(build, d.categories).some((slot) => slot.playStyleId === id)) {
+      return toast('Signature PlayStyles are equipped automatically and cannot be sold.');
+    }
+    const purchased = !!(build.playstylePurchases && build.playstylePurchases[id]);
+    const equipped = build.playstyles.includes(id);
+    if (!purchased && !equipped) return;
+    const plan = playstyleSalePlan(id, d);
+    commitBuildChange(() => {
+      build.playstyles = build.playstyles.filter((playstyleId) => playstyleId !== id);
+      if (build.playstylePurchases) delete build.playstylePurchases[id];
+      for (const attrId of Object.keys(plan.values)) {
+        const attr = C.findAttr(d.categories, attrId);
+        if (!attr) continue;
+        if (plan.values[attrId] <= attr.baseValue) delete build.attributes[attrId];
+        else build.attributes[attrId] = plan.values[attrId];
+      }
+    });
+    toast(`${psName(id)} sold · ${plan.refund} AP refunded`);
+  }
   // Equipar é sempre explícito: o usuário clica um slot e escolhe. Quick Unlock só compra requisitos.
   function equipPlaystyle(id) {
     const d = C.derive(build);
     const ps = C.playstyle(id);
     if (!ps) return;
-    if (d.facilities.unlocks.has(id)) return toast('Granted by a Facility — it does not use a slot.');
+    if (C.signatureSlots(build, d.categories).some((slot) => slot.playStyleId === id)) {
+      return toast('This Signature PlayStyle is already equipped.');
+    }
     if (build.playstyles.includes(id)) return toast('Already equipped.');
-    if (!C.playstyleEligible(ps, d.purchased, d.facilities.unlocks)) return toast('Requirements not met yet.');
+    if (!C.playstyleEligible(ps, d.purchased)) return toast('Requirements not met yet.');
     if (build.playstyles.length >= d.slots.unlocked) return toast('No free PlayStyle slot.');
     commitBuildChange(() => { build.playstyles.push(id); ui.psPicker = false; });
     toast(`${psName(id)} equipped`);
@@ -983,12 +992,6 @@
     if (i < 0) return;
     commitBuildChange(() => { build.playstyles.splice(i, 1); });
     toast(`${psName(id)} removed`);
-  }
-  function setFacility(id, star, kind) {
-    commitBuildChange(() => {
-      const selected = kind === 'ai' ? build.aiFacilities : build.facilities;
-      if (star === 0) delete selected[id]; else selected[id] = star;
-    });
   }
   function togglePosition(p) {
     if (C.derive(build).arch.position === 'GK') return;
@@ -1014,13 +1017,24 @@
     const ps = C.playstyle(playstyleId);
     if (!ps) return;
     const d = C.derive(build);
-    if (d.facilities.unlocks.has(playstyleId)) return toast('This PlayStyle is already granted by a Facility.');
+    if (C.signatureSlots(build, d.categories).some((slot) => slot.playStyleId === playstyleId)) {
+      return toast('This Signature PlayStyle is already unlocked and equipped.');
+    }
     if (build.playstyles.includes(playstyleId)) return toast('This PlayStyle is already equipped.');
     const plan = C.requirementUnlockPlan(ps, d.categories);
     if (!plan.feasible) return toast('This PlayStyle cannot be unlocked with this archetype.');
     if (plan.cost > d.ap.available) return toast(`Not enough AP (need ${plan.cost}, have ${Math.max(0, d.ap.available)})`);
     // Só compra os requisitos — NÃO ocupa slot. Equipar continua sendo uma escolha do usuário.
+    const before = {}, after = {};
+    for (const id of Object.keys(plan.values)) {
+      const attr = C.findAttr(d.categories, id);
+      if (!attr || plan.values[id] <= attr.currentValue) continue;
+      before[id] = attr.currentValue;
+      after[id] = plan.values[id];
+    }
     commitBuildChange(() => {
+      build.playstylePurchases = build.playstylePurchases || {};
+      build.playstylePurchases[playstyleId] = { before, after };
       for (const id of Object.keys(plan.values)) {
         const attr = C.findAttr(d.categories, id);
         if (attr && plan.values[id] > attr.currentValue) build.attributes[id] = plan.values[id];
@@ -1048,6 +1062,7 @@
     const info = utBuildable(player, d);
     if (!info.buildable) return toast(`Not enough AP (${info.cost} needed).`);
     commitBuildChange(() => {
+      build.playstylePurchases = {};
       for (const c of visibleCategories(d)) for (const a of c.attributes) {
         const target = info.values[a.id];
         if (target == null || target <= a.baseValue) delete build.attributes[a.id];
@@ -1130,7 +1145,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // clique no backdrop
       if (!t) return;
       // Os chips são preferência de otimizador, não estado de build: mudam a URL mas não gastam
@@ -1189,6 +1204,7 @@
       if (t.hasAttribute('data-attr-base')) return adjustAttr(ui.selectedAttr, 0, 'base');
       if (t.hasAttribute('data-attr-maximize')) return adjustAttr(ui.selectedAttr, 0, 'max');
       if (t.dataset.psUnlock) return quickUnlockPlaystyle(t.dataset.psUnlock);
+      if (t.dataset.psSell) return sellPlaystyle(t.dataset.psSell);
       if (t.dataset.psSlot != null) {
         const equipped = build.playstyles[+t.dataset.psSlot];
         if (equipped) return unequipPlaystyle(equipped);
@@ -1207,8 +1223,6 @@
         return refreshModal();
       }
       if (t.dataset.utOnly) { ui.utOnlyBuildable = t.dataset.utOnly === '1'; return refreshModal(); }
-      if (t.dataset.facView) { ui.facilityKind = t.dataset.facView; return refreshModal(); }
-      if (t.dataset.fac) return setFacility(t.dataset.fac, +t.dataset.star, t.dataset.facKind);
       if (t.dataset.specUnlock) return quickUnlockSpec(t.dataset.specUnlock);
       if (t.dataset.specAssign) return assignSpec(t.dataset.specAssign, +t.dataset.slot);
       if (t.dataset.specRevert) return revertSpec(t.dataset.specRevert);
@@ -1217,10 +1231,10 @@
       if (t.id === 'btn-undo') return undoBuild();
       if (t.id === 'btn-redo') return redoBuild();
       if (t.id === 'btn-reset') {
-        if (!confirm('Reset attributes, facilities, PlayStyles and Specializations? Level and club level are kept.')) return;
+        if (!confirm('Reset attributes, PlayStyles and Specializations? Player level is kept.')) return;
         commitBuildChange(() => {
-          const { archetypeId, level, clubLevel } = build;
-          build = Object.assign(defaultBuild(), { archetypeId, level, clubLevel });
+          const { archetypeId, level } = build;
+          build = Object.assign(defaultBuild(), { archetypeId, level });
         });
         return toast('Build reset · Ctrl+Z to undo');
       }
@@ -1242,7 +1256,6 @@
       if (t.hasAttribute('data-attr-range')) return liveAttrRange(t);
     });
     document.body.addEventListener('change', (e) => {
-      if (e.target.id === 'club-level') return commitBuildChange(() => { build.clubLevel = parseInt(e.target.value, 10); });
       if (e.target.id === 'level-input') return render(); // devolve o valor normalizado ao sair do campo
       if (e.target.dataset.body) return commitBodyDrag();
       if (e.target.hasAttribute('data-attr-range')) return adjustAttr(ui.selectedAttr, parseInt(e.target.value, 10), 'set');

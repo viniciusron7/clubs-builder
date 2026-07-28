@@ -240,34 +240,120 @@ button:not(:disabled) { cursor: pointer; }
 .ps-pick:hover .ps-pick-name { color: #fff; }
 .ps-picker-empty { padding: 1rem 0.75rem; text-align: center; font-size: 0.75rem; color: var(--color-text-muted); }
 
+.playstyle-slots-section {
+  position: static;
+}
+
+.available-playstyles-list {
+  max-height: none;
+  overflow: visible;
+}
+
 .ps-row {
-  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem;
-  border-radius: 0.5rem; border: 1px solid var(--color-border-primary); background: var(--color-bg-app);
+  display: flex;
+  min-height: 6.25rem;
+  padding: .55rem;
+  border: 1px solid var(--color-border-primary);
+  border-radius: .65rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .28rem;
+  background: var(--color-bg-app);
+  transition: border-color .15s, background-color .15s, transform .15s;
 }
 .ps-row.is-on { background: color-mix(in srgb, var(--color-btn-blue) 18%, transparent); border-color: rgb(var(--color-state-info)); }
-.ps-row.is-fac { background: color-mix(in srgb, rgb(var(--color-state-success)) 12%, transparent); border-color: color-mix(in srgb, rgb(var(--color-state-success)) 40%, transparent); }
-.ps-row.is-ready { border-color: color-mix(in srgb, var(--color-accent-primary) 45%, transparent); }
-.ps-row-icon { width: 1.75rem; height: 1.75rem; flex-shrink: 0; object-fit: contain; }
+.ps-row.is-ready,
+.ps-row.is-sellable {
+  border-color: color-mix(in srgb, #07f468 72%, transparent);
+  background: color-mix(in srgb, #07f468 9%, var(--color-bg-app));
+}
+.ps-row.is-unlockable { border-color: color-mix(in srgb, var(--color-btn-purple) 60%, transparent); }
+.ps-row.is-signature {
+  border-color: color-mix(in srgb, #d8b86a 72%, transparent);
+  background: color-mix(in srgb, #d8b86a 8%, var(--color-bg-app));
+}
+button.ps-row:not(:disabled):hover {
+  border-color: var(--color-btn-purple-hover);
+  background: var(--color-bg-card);
+  transform: translateY(-1px);
+}
+button.ps-row.is-sellable:not(:disabled):hover {
+  border-color: rgb(var(--color-state-error));
+  background: color-mix(in srgb, rgb(var(--color-state-error)) 8%, var(--color-bg-app));
+}
+button.ps-row:disabled { cursor: not-allowed; opacity: .62; }
+.ps-row-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
 .ps-row-icon.is-locked { filter: grayscale(1); opacity: .55; }
-.ps-row-main { flex: 1; min-width: 0; }
-.ps-row-name {
-  display: block; font-size: 0.75rem; font-weight: 700; color: var(--color-text-secondary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.ps-row-cost {
+  display: flex;
+  min-height: 1.65rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
 }
-.ps-row.is-on .ps-row-name { color: #fff; }
-.ps-row-req { display: block; font-size: 9px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ps-tag { flex-shrink: 0; padding: 0 0.4rem; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
-.ps-tag-fac { color: rgb(var(--color-state-success)); }
-.ps-tag-on { color: rgb(var(--color-state-info)); }
-.ps-tag-ready { color: var(--color-accent-primary-light); }
-.ps-tag-off { color: var(--color-text-disabled); }
-.ps-unlock {
-  flex-shrink: 0; padding: 0.375rem 0.5rem; border-radius: 0.375rem;
-  font-size: 9px; line-height: 1.15; font-weight: 800;
-  background: var(--color-btn-purple); color: #fff;
+.ps-row-cost strong {
+  color: var(--color-text-secondary);
+  font-size: .72rem;
+  font-weight: 800;
 }
-.ps-unlock:hover:not(:disabled) { background: var(--color-btn-purple-hover); }
-.ps-unlock:disabled { background: var(--color-bg-card); color: var(--color-text-disabled); cursor: not-allowed; }
+.ps-row-cost small {
+  margin-top: .12rem;
+  color: var(--color-text-muted);
+  font-size: .56rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ps-row-cost.is-affordable small { color: rgb(var(--color-state-success)); }
+.ps-row-cost.is-signature strong,
+.ps-row-cost.is-signature small { color: #d8b86a; }
+.ps-row-cost.is-sellable {
+  position: relative;
+  width: 100%;
+}
+.ps-sale-idle,
+.ps-sale-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.ps-sale-idle small { color: rgb(var(--color-state-success)); }
+.ps-sale-action {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: translateY(.18rem);
+  pointer-events: none;
+}
+.ps-sale-action strong,
+.ps-sale-action small { color: var(--color-btn-orange); }
+.ps-row.is-sellable:hover .ps-sale-idle,
+.ps-row.is-sellable:focus-visible .ps-sale-idle {
+  opacity: 0;
+  transform: translateY(-.18rem);
+}
+.ps-row.is-sellable:hover .ps-sale-action,
+.ps-row.is-sellable:focus-visible .ps-sale-action {
+  opacity: 1;
+  transform: translateY(0);
+}
+.ps-row-cost.is-insufficient strong,
+.ps-row-cost.is-insufficient small { color: rgb(var(--color-state-error)); }
+.ps-row-cost.is-unavailable { opacity: .6; }
+
+@media (hover: none) {
+  .ps-row.is-sellable { border-color: color-mix(in srgb, var(--color-btn-orange) 65%, transparent); }
+  .ps-row.is-sellable .ps-sale-idle { opacity: 0; }
+  .ps-row.is-sellable .ps-sale-action { opacity: 1; transform: none; }
+}
 
 /* ---- barra de filtros dos atletas UT ---- */
 .ut-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.625rem; }
@@ -1272,7 +1358,7 @@ button:not(:disabled):active {
 
   #tabs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   #tabs > button {

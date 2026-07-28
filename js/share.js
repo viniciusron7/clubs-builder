@@ -19,14 +19,13 @@ window.Share = (function () {
   }
 
   // ---- build <-> string compacta ----
-  // v2: {v:2, a:archetypeId, l:level, c:clubLevel, h:height, w:weight,
-  //      t:{attrId:val}, f:{playerFacId:star}, af:{aiFacId:star}, p:[playstyleIds]}
+  // v2: {v:2, a:archetypeId, l:level, h:height, w:weight,
+  //      t:{attrId:val}, p:[playstyleIds], pu:{playstyleId:{before,after}}}
   function encode(build) {
-    const obj = { v: 2, a: build.archetypeId, l: build.level, c: build.clubLevel, h: build.height, w: build.weight };
+    const obj = { v: 2, a: build.archetypeId, l: build.level, h: build.height, w: build.weight };
     if (build.attributes && Object.keys(build.attributes).length) obj.t = build.attributes;
-    if (build.facilities && Object.keys(build.facilities).length) obj.f = build.facilities;
-    if (build.aiFacilities && Object.keys(build.aiFacilities).length) obj.af = build.aiFacilities;
     if (build.playstyles && build.playstyles.length) obj.p = build.playstyles;
+    if (build.playstylePurchases && Object.keys(build.playstylePurchases).length) obj.pu = build.playstylePurchases;
     if (build.signatures && Object.keys(build.signatures).length) obj.s = build.signatures;
     if (build.positions && build.positions.length) obj.po = build.positions;
     if (build.disabledAttrs && build.disabledAttrs.length) obj.da = build.disabledAttrs;
@@ -39,13 +38,11 @@ window.Share = (function () {
       return {
         archetypeId: o.a || null,
         level: o.l != null ? o.l : 1,
-        clubLevel: o.c != null ? o.c : 1,
         height: o.h != null ? o.h : window.DATA.defaultHeight,
         weight: o.w != null ? o.w : window.DATA.defaultWeight,
         attributes: o.t || {},
-        facilities: o.f || {},
-        aiFacilities: o.af || {},
         playstyles: o.p || [],
+        playstylePurchases: o.pu || {},
         signatures: o.s || {},
         positions: o.po || [],
         disabledAttrs: o.da || [],
