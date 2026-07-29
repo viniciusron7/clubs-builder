@@ -1,54 +1,55 @@
-# Ativar Builds da Comunidade
+# Enable Community Builds
 
-A implementação já está no projeto. O GitHub Pages continua servindo apenas
-arquivos estáticos; Supabase guarda as publicações e executa a API, e Cloudflare
-Turnstile reduz spam sem exigir login.
+The implementation is already part of the project. GitHub Pages continues to
+serve static files only; Supabase stores publications and runs the API, while
+Cloudflare Turnstile reduces spam without requiring an account.
 
-## O que você precisa criar
+## What you need to create
 
-1. Crie um projeto em [Supabase](https://database.new/) e copie o `Project ID`
-   (também chamado de `project ref`).
-2. No painel da Cloudflare, abra **Turnstile**, crie um widget do tipo
-   **Managed** e autorize os hostnames que realmente servem a página:
-   `roncetti.com.br` e, se você também usa o endereço padrão do Pages,
-   `viniciusron7.github.io`. Inclua também `www.roncetti.com.br` se essa versão
-   abre o site sem redirecionar antes.
-3. Guarde os dois valores do widget:
-   - **Site key**: pública; será colocada no JavaScript.
-   - **Secret key**: secreta; será salva somente no Supabase.
+1. Create a project in [Supabase](https://database.new/) and copy the
+   `Project ID` (also called the `project ref`).
+2. In the Cloudflare dashboard, open **Turnstile**, create a **Managed** widget,
+   and allow the hostnames that actually serve the page: `roncetti.com.br` and,
+   if you also use the default Pages address, `viniciusron7.github.io`. Include
+   `www.roncetti.com.br` as well if that version opens the site without first
+   redirecting.
+3. Save both widget values:
+   - **Site key**: public; it is used by the JavaScript.
+   - **Secret key**: private; it is stored only in Supabase.
 
-Não coloque a secret key do Turnstile, a service-role/secret key do Supabase ou
-os segredos HMAC em nenhum arquivo do site.
+Do not put the Turnstile secret key, a Supabase service-role/secret key, or the
+HMAC secrets in any website file.
 
-## Instalar e conectar a CLI
+## Install and connect the CLI
 
-No macOS:
+On macOS:
 
 ```sh
 brew install supabase/tap/supabase
 cd /Users/viniciusroncetti/VSCODE/clubs-builder
 supabase login
-supabase link --project-ref SEU_PROJECT_REF
+supabase link --project-ref YOUR_PROJECT_REF
 ```
 
-O diretório `supabase/` já está inicializado, então não execute `supabase init`.
+The `supabase/` directory is already initialized, so do not run
+`supabase init`.
 
-## Criar os segredos
+## Create the secrets
 
-Gere dois valores diferentes e copie cada resultado:
+Generate two different values and copy each result:
 
 ```sh
 openssl rand -hex 32
 openssl rand -hex 32
 ```
 
-Depois configure a função. Troque os textos em maiúsculas:
+Then configure the function, replacing the uppercase placeholders:
 
 ```sh
 supabase secrets set \
-  TURNSTILE_SECRET_KEY='SECRET_KEY_DO_TURNSTILE' \
-  COMMUNITY_MANAGEMENT_TOKEN_SECRET='PRIMEIRO_VALOR_ALEATORIO' \
-  COMMUNITY_RATE_LIMIT_SECRET='SEGUNDO_VALOR_ALEATORIO' \
+  TURNSTILE_SECRET_KEY='YOUR_TURNSTILE_SECRET_KEY' \
+  COMMUNITY_MANAGEMENT_TOKEN_SECRET='FIRST_RANDOM_VALUE' \
+  COMMUNITY_RATE_LIMIT_SECRET='SECOND_RANDOM_VALUE' \
   COMMUNITY_ALLOWED_ORIGINS='https://roncetti.com.br,https://viniciusron7.github.io' \
   COMMUNITY_TURNSTILE_HOSTNAMES='roncetti.com.br,viniciusron7.github.io' \
   COMMUNITY_TURNSTILE_TEST_MODE='false' \
@@ -58,27 +59,27 @@ supabase secrets set \
   COMMUNITY_PUBLISH_WINDOW_SECONDS='3600'
 ```
 
-Se um dos dois domínios não serve a página, remova-o das duas listas. Origins
-usam `https://`; hostnames não usam protocolo nem caminho.
+If either domain does not serve the page, remove it from both lists. Origins
+include `https://`; hostnames do not include a scheme or path.
 
-## Criar o banco e publicar a função
+## Create the database and deploy the function
 
-Ainda na raiz do projeto:
+From the project root:
 
 ```sh
 supabase db push
 supabase functions deploy community-builds --use-api
 ```
 
-O primeiro comando aplica
-`supabase/migrations/20260729000000_community_builds.sql`. O segundo publica a
-Edge Function com a configuração pública definida em `supabase/config.toml`.
-Mantenha `--use-api`: a função importa as mesmas regras de jogo usadas pelo
-frontend, que ficam fora do diretório `supabase/`.
+The first command applies
+`supabase/migrations/20260729000000_community_builds.sql`. The second deploys
+the Edge Function using the public configuration in `supabase/config.toml`.
+Keep `--use-api`: the function imports the same game rules used by the frontend,
+which live outside the `supabase/` directory.
 
-## Ligar o frontend
+## Connect the frontend
 
-Os dois valores públicos já estão preenchidos em `js/community-config.js`:
+The two public values are already set in `js/community-config.js`:
 
 ```js
 const defaults = {
@@ -87,24 +88,24 @@ const defaults = {
 };
 ```
 
-Não coloque a Secret Key do Turnstile nesse arquivo. Depois do deploy do
-backend, faça commit/push e aguarde a atualização do GitHub Pages.
+Do not put the Turnstile Secret Key in this file. After deploying the backend,
+commit and push the changes, then wait for GitHub Pages to update.
 
-## Conferência final
+## Final verification
 
-1. Abra **Community Builds**. A tela de “Setup required” deve desaparecer.
-2. Abra uma build, clique em **Publish current build**, informe seu nome e um
-   nome para a build e conclua a verificação.
-3. Reabra o publicador: o nome do autor deve continuar preenchido.
-4. A publicação deve aparecer na galeria e abrir o link correto.
-5. No mesmo navegador, a publicação deve mostrar **Delete**. Em outro navegador
-   ela deve ser somente leitura.
+1. Open **Community Builds**. The "Setup required" screen should disappear.
+2. Open a build, click **Publish current build**, enter your name and a build
+   name, and complete the verification.
+3. Reopen the publisher: the author name should remain filled in.
+4. The publication should appear in the gallery and open the correct link.
+5. In the same browser, the publication should show **Delete**. In another
+   browser, it should be read-only.
 
-O nome lembrado e as credenciais de exclusão ficam em `localStorage`. Se os
-dados do navegador forem apagados, o botão de exclusão desaparece; nesse caso,
-você ainda pode ocultar ou apagar a linha pelo painel administrativo do
-Supabase. Para moderar sem excluir, altere `status` para `hidden` na tabela
-`community_builds`.
+The remembered name and deletion credentials are stored in `localStorage`. If
+browser data is cleared, the delete button disappears. In that case, you can
+still hide or delete the row through the Supabase administration panel. To
+moderate without deleting, change `status` to `hidden` in the
+`community_builds` table.
 
-Detalhes de API, segurança e teste local estão em
+API, security, and local testing details are documented in
 [COMMUNITY_SETUP_BACKEND.md](COMMUNITY_SETUP_BACKEND.md).

@@ -1,14 +1,14 @@
-# Sistema operacional
+# Operating systems
 .DS_Store
 Thumbs.db
 
-# Editores e IDEs
+# Editors and IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Instruções locais para assistentes
+# Local assistant instructions
 AGENTS.md
 CLAUDE.md
 .agents/
@@ -16,7 +16,7 @@ CLAUDE.md
 .codex/
 skills-lock.json
 
-# Dependências e configurações locais
+# Local dependencies and configuration
 node_modules/
 .env
 .env.*
@@ -28,7 +28,7 @@ supabase/.branches/
 supabase/functions/**/.env
 supabase/functions/**/.env.*
 
-# Logs e arquivos temporários
+# Logs and temporary files
 *.log
 *.tmp
 *.temp
@@ -39,7 +39,7 @@ supabase/functions/**/.env.*
 tmp/
 temp/
 
-# Relatórios e saídas geradas
+# Reports and generated output
 coverage/
 .nyc_output/
 playwright-report/
@@ -48,9 +48,9 @@ screenshots/
 dist/
 build/
 
-# Materiais locais de referência (não fazem parte do site)
+# Local reference materials (not part of the website)
 references/
 
-# Dataset completo opcional usado apenas na validação estatística local
+# Optional full dataset used only for local statistical validation
 data/*.csv
 ut_players_80_old.json

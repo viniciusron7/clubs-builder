@@ -1,7 +1,7 @@
 /* ============================================================================
- * app.css — Complementos ao vendor.css (Tailwind compilado do original).
- * Define utilitários de opacidade que o build original não incluiu e ajusta
- * componentes nativos. Reaproveita as CSS vars (--color-*) do vendor.css.
+ * app.css — Additions to vendor.css (Tailwind compiled from the original).
+ * Defines opacity utilities omitted from the original build and adjusts native
+ * components. Reuses the CSS variables (--color-*) from vendor.css.
  * ========================================================================== */
 
 @font-face {
@@ -42,7 +42,7 @@ input[type="range"] {
   cursor: pointer;
 }
 
-/* foco visível por teclado (o vendor.css removeu o outline padrão sem repor nada) */
+/* visible keyboard focus (vendor.css removed the default outline without replacing it) */
 :where(button, a, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--color-accent-primary-light);
   outline-offset: 2px;
@@ -57,31 +57,31 @@ button:not(:disabled) { cursor: pointer; }
   }
 }
 
-/* linha de archetypes: flex que enche a largura (o vendor.css não tem grid-cols-7/13) */
+/* archetype row: flex fills the width (vendor.css has no grid-cols-7/13) */
 .arch-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .arch-row > button { flex: 1 1 84px; max-width: 132px; }
 
-/* grid de atributos: 1→2→3→4 colunas (como o original) */
+/* attribute grid: 1→2→3→4 columns (matching the original) */
 .attr-grid { display: grid; gap: 0.75rem; align-content: start; grid-template-columns: 1fr; }
 @media (min-width: 640px) { .attr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1280px) { .attr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1600px) { .attr-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
-/* z-index e tamanhos arbitrários do modal/toast.
-   dvh como segunda declaração: navegadores antigos ficam no vh, os novos escapam
-   da barra de endereço que aparece/some no mobile. */
+/* arbitrary z-index and modal/toast sizes.
+   dvh is the second declaration: older browsers keep vh, while newer ones avoid
+   the address bar that appears and disappears on mobile. */
 .z-\[90\] { z-index: 90; }
 .z-\[100\] { z-index: 100; }
 .max-h-\[92vh\] { max-height: 92vh; max-height: 92dvh; }
 .max-h-\[90vh\] { max-height: 90vh; max-height: 90dvh; }
 .max-h-\[34vh\] { max-height: 34vh; max-height: 34dvh; }
 
-/* tamanhos de texto arbitrários que o app usa 21 vezes e o vendor.css nunca compilou —
-   sem eles toda a tipografia secundária caía no tamanho herdado. */
+/* arbitrary text sizes used 21 times by the app but never compiled into vendor.css —
+   without them all secondary typography fell back to the inherited size. */
 .text-\[10px\] { font-size: 10px; line-height: 1.25; }
 .text-\[11px\] { font-size: 11px; line-height: 1.3; }
 
-/* utilitários extra usados nos modais */
+/* additional utilities used in modals */
 .border-dashed { border-style: dashed; }
 .border-feat-special { border-color: var(--color-feature-special); }
 .border-feat-special\/60 { border-color: color-mix(in srgb, var(--color-feature-special) 60%, transparent); }
@@ -100,7 +100,7 @@ button:not(:disabled) { cursor: pointer; }
   .lg\:grid-cols-9 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
 }
 
-/* extras do seletor de posições / modal de otimização */
+/* position selector / optimization modal additions */
 .bg-black\/30 { background-color: rgba(0, 0, 0, 0.3); }
 .mr-1 { margin-right: 0.25rem; }
 .pl-6 { padding-left: 1.5rem; }
@@ -123,32 +123,32 @@ button:not(:disabled) { cursor: pointer; }
 }
 
 @media (max-width: 640px) {
-  /* header (56px) + barra de resumo (~150px) travavam 1/4 da tela do celular.
-     Só o header continua fixo; o resumo rola junto com a página. */
+  /* the header (56px) + summary bar (~150px) occupied 1/4 of the phone screen.
+     Only the header remains fixed; the summary scrolls with the page. */
   main > .sticky { position: static; }
 
-  /* 13 archetypes em 4 linhas comiam ~420px antes de qualquer conteúdo:
-     vira uma faixa deslizante de uma linha. */
+  /* 13 archetypes across 4 rows consumed ~420px before any content:
+     turn them into a single-row horizontal strip. */
   .arch-row { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 0.25rem; }
   .arch-row > button { flex: 0 0 84px; max-width: 84px; scroll-snap-align: start; }
 
-  /* alvos de toque: mínimo utilizável com o dedo */
+  /* touch targets: minimum usable size for a finger */
   [data-star], [data-pos], #archetype-filters button, [data-spec-assign], .ut-chip, .seg > button { min-height: 40px; }
   [data-star] { min-width: 40px; }
 
-  /* um único eixo de rolagem dentro do modal (o de dentro guardava o conteúdo) */
+  /* a single scrolling axis inside the modal (the inner one contained the content) */
   .max-h-\[34vh\] { max-height: none; }
   .ps-picker-grid { max-height: none; }
   .ut-list { max-height: none; }
 }
 
-/* o painel de detalhe vazio virava uma caixa morta de 300px no fim da página */
+/* the empty detail panel became a dead 300px box at the end of the page */
 @media (max-width: 1023px) {
   #panel { min-height: 0; }
   #panel > div { min-height: 0; }
 }
 
-/* chips de atributos a otimizar (ligado = azul; desligado = cinza riscado) */
+/* attributes-to-optimize chips (on = blue; off = gray and struck through) */
 .opt-chip {
   padding: 0.25rem 0.625rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 600;
   background: var(--color-btn-blue); color: #fff; border: 1px solid transparent;
@@ -159,18 +159,18 @@ button:not(:disabled) { cursor: pointer; }
   background: var(--color-bg-card); color: var(--color-text-disabled); text-decoration: line-through;
 }
 
-/* ---- linha de atributo (button, então só elementos inline dentro) ---- */
+/* ---- attribute row (a button, so only inline elements inside) ---- */
 .attr-bar {
   display: block; width: 100%; height: 0.75rem; overflow: hidden;
   border-radius: 9999px; background: var(--color-bg-card); border: 1px solid var(--color-border-primary);
 }
 .attr-bar-fill { display: block; height: 100%; border-radius: 9999px; transition: width .3s; }
-/* skill moves / weak foot: 2..5 estrelas em vez da barra de 1-99 */
+/* skill moves / weak foot: 2..5 stars instead of the 1–99 bar */
 .attr-stars { display: block; font-size: 0.95rem; line-height: 0.75rem; letter-spacing: .14em; color: var(--color-feature-premium); }
 .attr-stars-off { color: var(--color-border-secondary); }
 
 /* ============================================================================
- * PlayStyles — slots clicáveis, seletor e lista de requisitos.
+ * PlayStyles — clickable slots, picker, and requirements list.
  * ========================================================================== */
 .ps-slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 @media (min-width: 640px) { .ps-slot-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
@@ -355,7 +355,7 @@ button.ps-row:disabled { cursor: not-allowed; opacity: .62; }
   .ps-row.is-sellable .ps-sale-action { opacity: 1; transform: none; }
 }
 
-/* ---- barra de filtros dos atletas UT ---- */
+/* ---- UT player filter bar ---- */
 .ut-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.625rem; }
 .ut-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .ut-chip {
@@ -381,7 +381,7 @@ button.ps-row:disabled { cursor: not-allowed; opacity: .62; }
 .ut-empty { padding: 2.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--color-text-muted); }
 .ut-more { padding-top: 0.5rem; text-align: center; font-size: 0.6875rem; color: var(--color-text-disabled); }
 
-/* galeria de cartas Ultimate Team */
+/* Ultimate Team card gallery */
 #modal-box[data-modal-kind="utplayers"] {
   max-width: min(96vw, 90rem);
 }
@@ -430,7 +430,7 @@ button.ps-row:disabled { cursor: not-allowed; opacity: .62; }
   }
 }
 
-/* variantes de opacidade ausentes no vendor.css (usadas pelo app) */
+/* opacity variants missing from vendor.css (used by the app) */
 .bg-btn-blue\/20 { background-color: color-mix(in srgb, var(--color-btn-blue) 20%, transparent); }
 .bg-feat-special\/30 { background-color: color-mix(in srgb, var(--color-feature-special) 30%, transparent); }
 .bg-feat-special { background-color: var(--color-feature-special); }
@@ -438,15 +438,15 @@ button.ps-row:disabled { cursor: not-allowed; opacity: .62; }
 .bg-app-bg\/95 { background-color: color-mix(in srgb, var(--color-bg-app) 95%, transparent); }
 .bg-app-bg\/40 { background-color: color-mix(in srgb, var(--color-bg-app) 40%, transparent); }
 
-/* scrollbar discreta nos painéis roláveis */
+/* subtle scrollbar for scrollable panels */
 .overflow-y-auto::-webkit-scrollbar { width: 8px; }
 .overflow-y-auto::-webkit-scrollbar-thumb { background: var(--color-bg-card); border-radius: 4px; }
 .overflow-y-auto::-webkit-scrollbar-track { background: transparent; }
 
-/* grayscale helper (caso ausente) */
+/* grayscale helper (when missing) */
 .grayscale { filter: grayscale(1); }
 
-/* utilitários Tailwind ausentes no vendor.css (o build original não os usou) */
+/* Tailwind utilities missing from vendor.css (the original build did not use them) */
 .content-start { align-content: flex-start; }
 .self-start { align-self: flex-start; }
 .col-span-full { grid-column: 1 / -1; }
@@ -1347,8 +1347,8 @@ button:not(:disabled):active {
   }
 }
 
-/* Reversão da identidade navy + mint.
-   Mantém apenas a tipografia nativa e a compactação estrutural solicitadas depois. */
+/* Reverts the navy + mint identity.
+   Keeps only the native typography and structural compaction requested later. */
 :root {
   --color-bg-app: #0d1420;
   --color-bg-surface: #111a28;
@@ -1557,7 +1557,7 @@ body::before {
   background: var(--color-bg-panel);
 }
 
-/* Pesos do modelo de overall */
+/* Overall model weights */
 .weight-toggle {
   display: inline-flex;
   align-items: center;
@@ -2276,7 +2276,7 @@ body::before {
   }
 }
 
-/* Escala dos atributos validada diretamente no navegador. */
+/* Attribute scale validated directly in the browser. */
 #attributes .attr-bar {
   height: 5px !important;
   border-radius: 6px !important;

@@ -1,8 +1,3 @@
-/* ============================================================================
- * data.js — Dados do FC 26 Pro Clubs Builder
- * Extraído de clubsbuilder.com (build Next.js) e normalizado para JS puro.
- * Tudo em inglês. Expõe window.DATA. Não editar à mão sem necessidade.
- * ========================================================================== */
 window.DATA = {
   "archetypes": [
     {

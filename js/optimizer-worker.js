@@ -427,9 +427,9 @@
 
       if (stopped) {
         bounded = true;
-        // Os candidatos já expandidos escolheram o atributo atual e ainda podem ser
-        // completados pelo greedy. O código anterior os apagava e deixava apenas o
-        // incumbente inicial, tornando a recuperação abaixo inalcançável.
+        // Expanded candidates have already selected the current attribute and can
+        // still be completed greedily. The previous code discarded them and kept
+        // only the initial incumbent, making the recovery below unreachable.
         if (expanded.length) {
           states = beam(problem, dedupe(expanded), maxRemaining[attrIndex + 1]);
           stoppedAt = attrIndex + 1;

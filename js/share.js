@@ -1,9 +1,9 @@
 /* ============================================================================
- * share.js — Compartilhar build via URL (?b=) e exportar imagem (PNG).
- * Sem dependências. Expõe window.Share.
+ * share.js — Share builds by URL (?b=) and export images (PNG).
+ * No dependencies. Exposes window.Share.
  * ========================================================================== */
 window.Share = (function () {
-  // ---- base64url <-> texto UTF-8 ----
+  // ---- base64url <-> UTF-8 text ----
   function b64urlEncode(str) {
     const bytes = new TextEncoder().encode(str);
     let bin = '';
@@ -18,7 +18,7 @@ window.Share = (function () {
     return new TextDecoder().decode(bytes);
   }
 
-  // ---- build <-> string compacta ----
+  // ---- build <-> compact string ----
   // v2: {v:2, a:archetypeId, l:level, h:height, w:weight,
   //      t:{attrId:val}, p:[playstyleIds], pu:{playstyleId:{before,after}}}
   function encode(build) {
@@ -71,7 +71,7 @@ window.Share = (function () {
     } catch (e) {}
   }
 
-  // ---- exportar imagem: card de build desenhado no canvas (robusto) ----
+  // ---- export image: build card drawn on canvas (robust) ----
   const PAL = {
     bg: '#0d1420', panel: '#162030', card: '#1c2838', track: '#0b1018', border: '#2a3a4a',
     text: '#eaeaea', sec: '#c8cdd3', muted: '#6b7280', accent: '#34d399', blue: '#3b82f6', special: '#a855f7',
@@ -89,12 +89,12 @@ window.Share = (function () {
     const D = window.DATA, C = window.Calc, L = D.labels;
     const attrName = (id) => (L.attribute[id] || id);
     const cats = d.arch.position === 'GK' ? d.categories : d.categories.filter((c) => c.id !== 'goalkeeping');
-    // itens de playstyle no rodapé: 4 signature (com +) + regulares equipados
+    // footer PlayStyle items: 4 signature (with +) + equipped regular items
     const sigItems = C.signatureSlots(build, d.categories).filter((s) => s.playStyleId).map((s) => ({ id: s.playStyleId, plus: s.isPlus }));
     const regItems = (build.playstyles || []).map((id) => ({ id, plus: false }));
     const items = sigItems.concat(regItems);
 
-    // pré-carrega imagens
+    // preload images
     const archImg = await loadImage('archetypes/' + d.arch.iconFileName);
     const psImgs = {};
     for (const it of items) { const p = C.playstyle(it.id); if (p) { const key = it.id + (it.plus ? '+' : ''); if (!psImgs[key]) psImgs[key] = await loadImage((it.plus ? 'playstyles/plus/' : 'playstyles/') + p.iconFileName); } }
@@ -124,7 +124,7 @@ window.Share = (function () {
     ctx.scale(scale, scale);
     ctx.textBaseline = 'alphabetic';
 
-    // fundo
+    // background
     ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
 
     // ---- header ----
@@ -136,7 +136,7 @@ window.Share = (function () {
     ctx.fillStyle = PAL.muted; ctx.font = '600 16px system-ui, sans-serif';
     ctx.fillText((L.position[d.arch.position.toLowerCase()] || d.arch.position).toUpperCase(), pad + 110, pad + 72);
 
-    // stats à direita
+    // stats on the right
     const stat = (label, val, x, color) => {
       ctx.textAlign = 'right';
       ctx.fillStyle = PAL.muted; ctx.font = '600 12px system-ui'; ctx.fillText(label, x, pad + 36);
@@ -159,7 +159,7 @@ window.Share = (function () {
       ctx.fillText(Object.entries(overalls).map(([position, overall]) => position + ' ' + overall).join('  ·  '), pad + 110, pad + 100);
     }
 
-    // ---- categorias ----
+    // ---- categories ----
     place.forEach(({ c, x, y }) => {
       const h = catH(c);
       ctx.fillStyle = PAL.card; roundRect(ctx, x, y, colW, h, 12); ctx.fill();
@@ -176,7 +176,7 @@ window.Share = (function () {
         ctx.fillStyle = C.barColor(val); ctx.font = '700 15px system-ui';
         ctx.fillText(a.displayType === 'stars' ? val + '★' : String(val), x + colW - cardPad, ry + 14);
         ctx.textAlign = 'left';
-        // barra — atributos de estrela vão de 1..maxValue (2..5), não de 1..99
+        // bar — star attributes range from 1..maxValue (2..5), not 1..99
         const span = a.displayType === 'stars' ? Math.max(1, a.maxValue - 1) : 98;
         const bw = colW - cardPad * 2, bx = x + cardPad, by = ry + 20;
         ctx.fillStyle = PAL.track; roundRect(ctx, bx, by, bw, 6, 3); ctx.fill();
@@ -185,7 +185,7 @@ window.Share = (function () {
       });
     });
 
-    // ---- playstyles (signature + equipados) ----
+    // ---- PlayStyles (signature + equipped) ----
     if (items.length) {
       let fy = bottom + 6;
       ctx.fillStyle = PAL.muted; ctx.font = '700 13px system-ui';

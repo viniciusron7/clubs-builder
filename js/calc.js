@@ -1,7 +1,6 @@
 /* ============================================================================
- * calc.js — Mecânicas do FC 26 Pro Clubs Builder (lógica pura, sem DOM).
- * Tudo revertido fielmente do app original (clubsbuilder.com).
- * Expõe window.Calc. Depende de window.DATA (data.js).
+ * calc.js — FC 26 Pro Clubs Builder mechanics.
+ * Exposes window.Calc. Depends on window.DATA (data.js).
  * ========================================================================== */
 window.Calc = (function () {
   const D = window.DATA;
@@ -12,7 +11,7 @@ window.Calc = (function () {
   const archetype = (id) => byId(D.archetypes, id);
   const playstyle = (id) => byId(D.playstyles, id);
 
-  // ---- atributos: categorias base com modifiers do archetype + desconto de tier p/ key ----
+  // ---- attributes: base categories with archetype modifiers + key tier discount ----
   function baseCategories(arch) {
     return D.categories.map((cat) => ({
       id: cat.id,
@@ -28,7 +27,7 @@ window.Calc = (function () {
           maxValue: mod ? mod.maxValue : attr.maxValue,
           tier,
           isKeyAttribute: isKey,
-          displayType: attr.displayType, // 'stars' em skill moves / weak foot (escala 2..5, não 1..99)
+          displayType: attr.displayType, // 'stars' for skill moves / weak foot (2..5 scale, not 1..99)
         };
       }),
     }));
@@ -41,7 +40,7 @@ window.Calc = (function () {
     const r = t.costRanges.find((x) => value >= x.minValue && value <= x.maxValue);
     return r ? r.apCost : 1;
   }
-  // custo (com sinal) de mover um atributo de `base` para `current`
+  // signed cost of moving an attribute from `base` to `current`
   function apCost(tier, base, current) {
     if (base === current) return 0;
     const up = current > base;
@@ -51,7 +50,7 @@ window.Calc = (function () {
     for (let v = lo; v <= hi; v++) sum += apCostAt(tier, v);
     return up ? sum : -sum;
   }
-  // total de AP disponível para um nível (100 base + ganho por nível, cap no nível 100)
+  // total AP available at a level (100 base + per-level gain, capped at level 100)
   function totalAP(level) {
     if (level < 1) return D.apBase;
     const cap = Math.min(level, D.apLevelCap);
@@ -59,13 +58,13 @@ window.Calc = (function () {
     for (let a = 2; a <= cap; a++) t += D.levelApTable[a] || 0;
     return t;
   }
-  // AP necessário para subir +1 a partir do valor atual (ou null se já no max)
+  // AP needed to increase by 1 from the current value (or null when already at max)
   function apCostNextPoint(attr) {
     if (attr.currentValue >= attr.maxValue) return null;
     return apCostAt(attr.tier, attr.currentValue + 1);
   }
-  // maior valor alcançável a partir do atual dado o AP disponível (não deixa o AP ficar negativo).
-  // baixar sempre é permitido (devolve AP).
+  // highest reachable value from the current one with the available AP (never makes AP negative).
+  // decreasing is always allowed (it refunds AP).
   function affordableTarget(attr, available, requested) {
     const target = Math.min(requested, attr.maxValue);
     if (target <= attr.currentValue) return Math.max(target, attr.baseValue);
@@ -78,7 +77,7 @@ window.Calc = (function () {
     return reached;
   }
 
-  // ---- corpo (altura/peso) -> ajuste por atributo afetado ----
+  // ---- body (height/weight) -> adjustment by affected attribute ----
   function bodyAdjustments(arch, height, weight) {
     const map = {};
     if (!arch) return map;
@@ -90,14 +89,14 @@ window.Calc = (function () {
     const dw = weight - refW;
     const t = Math.ceil(Math.abs(dh) / 4) * Math.sign(dh);
     const s = Math.ceil(Math.abs(dw) / 8) * Math.sign(dw);
-    // ordem dos arrays casa com AFFECTED/GK_AFFECTED_ATTRIBUTE_IDS
+    // array order matches AFFECTED/GK_AFFECTED_ATTRIBUTE_IDS
     const hp = isGK ? [t, -t, t, -t, t, t] : [-t, -t, -t, t, t, t];
     const wp = isGK ? [-s, s, -s, -s, -s, s] : [-s, -s, s, s, -s, s];
     affected.forEach((id, i) => { map[id] = hp[i] + wp[i]; });
     return map;
   }
 
-  // AcceleRATE — portado verbatim. Recebe valores JÁ ajustados pelo corpo + altura.
+  // AcceleRATE — ported verbatim. Receives values ALREADY adjusted by body + height.
   function accelType(agility, strength, acceleration, height) {
     if (agility >= 65 && agility - strength >= 10 && acceleration >= 80 && height <= 184) return 'EXPLOSIVE';
     if (strength >= 65 && strength - agility >= 4 && acceleration >= 40 && height >= 185) return 'LENGTHY';
@@ -110,7 +109,7 @@ window.Calc = (function () {
     return ps.requirements.every((r) => (purchased[r.attributeId] || 0) >= r.minValue);
   }
   const unlockedSlots = (level) => D.slotUnlockLevels.filter((l) => level >= l).length;
-  // índice do slot de signature (0-3) que vira "+" para o nível dado
+  // number of signature slots (0–3) upgraded to "+" at the given level
   function signaturePlusCount(level) {
     return D.signaturePlusLevels.filter((l) => level >= l).length;
   }
@@ -126,11 +125,11 @@ window.Calc = (function () {
     for (const c of cats) for (const a of c.attributes) if (a.id === id) return a;
     return null;
   }
-  // specialization desbloqueada quando os requisitos (valor atual >= min) são atingidos
+  // a specialization unlocks when its requirements (current value >= minimum) are met
   function specializationUnlocked(spec, cats) {
     return spec.requirements.every((r) => curVal(cats, r.attributeId) >= r.minValue);
   }
-  // Plano central de Quick Unlock para PlayStyles e Specializations.
+  // Central Quick Unlock plan for PlayStyles and Specializations.
   function requirementUnlockPlan(item, cats) {
     const targets = {};
     for (const requirement of (item && item.requirements) || []) {
@@ -156,7 +155,7 @@ window.Calc = (function () {
   function quickUnlockCost(item, cats) {
     return requirementUnlockPlan(item, cats).cost;
   }
-  // os 4 slots de signature: default = recomendados; podem ser trocados por specialization
+  // the 4 signature slots: default = recommended; each can be replaced by a specialization
   function signatureSlots(build, cats) {
     const rec = D.recommended[build.archetypeId] || [];
     const sigs = build.signatures || {};
@@ -172,7 +171,7 @@ window.Calc = (function () {
     });
   }
 
-  // ---- cor da barra por valor ----
+  // ---- bar color by value ----
   function barColor(v) {
     for (const [threshold, color] of D.barColors) if (v >= threshold) return color;
     return D.barColors[D.barColors.length - 1][1];
@@ -254,9 +253,9 @@ window.Calc = (function () {
     });
     return overalls;
   }
-  // Perfil de peso exibido pela interface. Em seleção múltipla, combina todas as
-  // posições pela média dos coeficientes. Assim o perfil representa o ganho conjunto
-  // de OVR e nunca muda silenciosamente para apenas uma das posições selecionadas.
+  // Weight profile displayed by the interface. For multiple selections, combine all
+  // positions by averaging their coefficients. This makes the profile represent the
+  // shared OVR gain without silently switching to only one selected position.
   function overallWeightProfile(positions, derived) {
     const list = normalizePositions(positions);
     const overalls = derived ? overallMapForValues(list, derived, null) : {};
@@ -518,9 +517,9 @@ window.Calc = (function () {
     };
   }
 
-  // Resolve exatamente uma combinação linear dos OVRs. Embora uma única combinação linear
-  // não prove o ótimo max-min discreto, ela produz candidatos Pareto fortes e determinísticos
-  // em O(atributos × AP × opções), sem explodir o espaço multidimensional.
+  // Exactly solves a linear combination of OVRs. Although one linear combination does
+  // not prove the discrete max-min optimum, it produces strong deterministic Pareto
+  // candidates in O(attributes × AP × options) without exploding the multidimensional space.
   function exactWeightedMultiPlan(attrs, budget, coefficients) {
     const cappedBudget = Math.max(0, Math.floor(budget));
     let dp = new Float64Array(cappedBudget + 1);
@@ -589,8 +588,8 @@ window.Calc = (function () {
     const equal = baseRaws.map(() => 1);
     const coefficientSets = [equal];
     if (baseRaws.length <= 3) {
-      // Duplas precisam de razões mais finas; trios usam a grade simplex completa de
-      // 45 pontos. Isso cobre distribuições não encontradas por "peso igual + um destaque".
+      // Pairs need finer ratios; trios use the complete 45-point simplex grid. This
+      // covers distributions not found by "equal weights + one highlighted position."
       const total = baseRaws.length === 2 ? 16 : 8;
       const compose = (remaining, index, values) => {
         if (index === baseRaws.length - 1) {
@@ -609,8 +608,8 @@ window.Calc = (function () {
         strong[index] = 4;
         coefficientSets.push(strong);
       }
-      // Para seleções maiores, cobre também interações entre pares limitantes sem
-      // gerar a grade simplex combinatória inteira.
+      // For larger selections, also cover interactions between limiting pairs without
+      // generating the entire combinatorial simplex grid.
       for (let first = 0; first < baseRaws.length; first++) {
         for (let second = first + 1; second < baseRaws.length; second++) {
           const pair = equal.slice();
@@ -841,10 +840,9 @@ window.Calc = (function () {
     objective = { overalls: trimmed.overalls, min: trimmed.min, sum: trimmed.sum };
     feasible = mode === 'max' || objective.min >= target;
     let status = repaired ? 'best-found' : (plan.status || 'best-found');
-    // Todos os atributos no máximo limitam o melhor menor OVR; a DP de pesos
-    // iguais limita a soma inteira. Se o Worker também terminou o polish exato,
-    // "optimal" inclui o desempate por menor AP. Caso contrário, os OVRs estão
-    // provados, mas o custo continua identificado separadamente.
+    // All attributes at maximum bound the best minimum OVR; equal-weight DP bounds the
+    // full sum. If the Worker also completed exact polishing, "optimal" includes the
+    // lower-AP tiebreak. Otherwise the OVRs are proven while cost remains identified separately.
     if (mode === 'max' && multi
       && objective.min === maximumObjective.min
       && maxSumUpper != null
@@ -864,10 +862,10 @@ window.Calc = (function () {
     };
   }
 
-  // ---- maximizar a SOMA de atributos escolhidos dado um orçamento de AP ----
-  // cada +1 soma 1 ao total e custa apCostAt(tier, valor); ótimo = comprar sempre o
-  // próximo ponto mais barato entre os escolhidos (maximiza o nº de pontos = a soma).
-  // mantém os níveis atuais como piso (só sobe), respeita o max do arquétipo.
+  // ---- maximize the SUM of selected attributes for a given AP budget ----
+  // each +1 adds 1 to the total and costs apCostAt(tier, value); the optimum always
+  // buys the cheapest next point among the selected attributes (max points = max sum).
+  // preserve current levels as a floor (increase only) and respect the archetype maximum.
   function maximizeSum(derived, opts) {
     const include = new Set(opts.include);
     const attrs = [];
@@ -979,14 +977,14 @@ window.Calc = (function () {
         break;
       }
 
-      // Arquétipo/especialização já equipam esses PlayStyles fora dos slots regulares.
+      // Archetypes/specializations already equip these PlayStyles outside regular slots.
       const signatureIds = new Set(signatureSlots(out, currentCategories)
         .filter((slot) => slot.playStyleId)
         .map((slot) => slot.playStyleId));
       out.playstyles = out.playstyles.filter((id) => !signatureIds.has(id));
 
-      // Guarda apenas a parcela de atributos efetivamente comprada por cada Quick Unlock.
-      // O recibo permite vender depois sem apagar melhorias manuais feitas antes ou depois.
+      // Keep only the attributes actually purchased by each Quick Unlock. The receipt
+      // allows a later sale without removing manual upgrades made before or afterward.
       const sourcePurchases = source.playstylePurchases && typeof source.playstylePurchases === 'object'
         ? source.playstylePurchases
         : {};
@@ -1039,7 +1037,7 @@ window.Calc = (function () {
     return { build: out, adjusted: JSON.stringify(comparable) !== JSON.stringify(out) };
   }
 
-  // ---- estado derivado completo do build ----
+  // ---- complete derived build state ----
   function derive(build) {
     const arch = archetype(build.archetypeId);
     const cats = baseCategories(arch).map((cat) => ({
@@ -1058,12 +1056,12 @@ window.Calc = (function () {
       eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0), 1, 99);
     }));
 
-    // AP gasto
+    // AP spent
     let spent = 0;
     cats.forEach((c) => c.attributes.forEach((a) => { spent += apCost(a.tier, a.baseValue, a.currentValue); }));
     const total = totalAP(build.level);
 
-    // AcceleRATE usa agility/strength/acceleration ajustados só pelo corpo (como no original)
+    // AcceleRATE uses agility/strength/acceleration adjusted only by body (as in the original)
     const cur = (id) => { for (const c of cats) for (const a of c.attributes) if (a.id === id) return a.currentValue; return 0; };
     const accAttr = (id) => cur(id) + (bodyAdj[id] || 0);
     const accel = arch && arch.position !== 'GK'

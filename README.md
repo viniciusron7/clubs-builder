@@ -1,112 +1,131 @@
 # FC 26 Pro Clubs Builder
 
-Builder de EA FC 26 Clubs implementado sem framework, usando HTML, CSS e JavaScript puro.
-Permite montar, otimizar, compartilhar e exportar builds de jogador.
+An EA FC 26 Clubs builder implemented without a framework, using plain HTML, CSS, and JavaScript.
+It lets you create, optimize, share, and export player builds.
 
-## Como rodar
+## Running locally
 
-Use um servidor local. O navegador bloqueia recursos usados pelo dataset UT, pelo Web Worker,
-pelo canvas e pelo clipboard quando a página é aberta diretamente por `file://`.
+Use a local server. Browsers block resources used by the UT dataset, Web Worker,
+canvas, and clipboard when the page is opened directly through `file://`.
 
-  ```bash
-  cd clubs-builder
-  python3 -m http.server 4173 --bind 0.0.0.0
-  # abra http://localhost:4173
-  ```
-
-## O que está incluído (paridade com o original)
-
-- **Archetypes** (13: 2 GK, 4 DEF, 4 MID, 3 FWD) com filtro por posição.
-- **Atributos** — 8 categorias, com sistema de **AP (Attribute Points)** fiel:
-  total por nível, custo por ponto que depende de tier + valor, key attributes com
-  desconto de tier. O nível máximo é **100**, com **3167 AP** totais. Editor com +/−,
-  slider, custo do próximo ponto e breakdown.
-- **Body** — altura/peso (limitados ao archetype) ajustam atributos pela fórmula real;
-  cálculo do **AcceleRATE** (Explosive/Lengthy/Controlled).
-- **PlayStyles** (modal) — 4 **signature** (viram "+" nos níveis 30/50/75/95) + 9 slots regulares
-  por nível (1/10/20/40/60/70/80/90/95). PlayStyles ainda bloqueados têm **Quick Unlock**,
-  que compra os requisitos com o cálculo central de AP, respeitando máximo do arquétipo e AP disponível.
-- **Specializations** (modal) — 3 por archetype, com requisitos de atributo; desbloqueiam ao atingir
-  ou via **Quick Unlock** (gasta AP). Somente uma Specialization pode ficar ativa por vez, substituindo
-  um dos 4 slots de signature pelo seu PlayStyle+.
-- **Posições + OVR estimado** — escolha 1+ posições de linha; GK é automático para goleiros.
-  Cada posição é calculada independentemente por `js/weights.js` usando somente atributos comprados:
-  `OVR = floor(intercepto + Σ peso·atributo) - 1`, limitado a 1–99. Altura e peso alteram atributos
-  efetivos de partida, não o OVR estimado do lobby. A tolerância esperada é ±1.
-- O modelo v2 foi validado nas cartas base Common/Rare: 93,43% exato e 99,995% dentro de ±1
-  em 19.363 jogadores de linha; 88,05% exato e 100% ±1 nos 2.528 jogadores 75+; 98,05% exato
-  e 100% ±1 em 2.303 goleiros.
-- **Otimizar Overall** (modal) — dois modos:
-  1. *Maximizar overall dado AP* (adicional): aloca AP pra subir o overall ao máximo.
-  2. *Mínimo AP dado overall*: acha os níveis de atributo p/ atingir o overall alvo gastando o mínimo de AP.
-  Com **múltiplas posições** usa MinMax (maximiza o menor OVR, depois a soma e por fim minimiza AP).
-  A busca roda em Web Worker com poda de Pareto e limites de 250.000 estados/2 segundos. O resultado
-  informa `optimal` quando há prova ou `best-found` quando a busca limitada devolve o melhor encontrado.
-  Antes de aplicar, custo, limites e OVRs são recalculados, AP sem efeito no objetivo é removido e alvos
-  impossíveis exibem o maior OVR realmente alcançável. Fechar o modal cancela uma busca em andamento.
-  Os atributos já evoluídos são mantidos como piso.
-  No modal dá pra **excluir atributos** (chip cinza/riscado): o otimizador não gasta AP neles — eles ficam
-  fixos, mas ainda contam no overall pelo valor atual.
-- **Maximizar Soma de Atributos** (botão "Σ Max Sum") — escolha os atributos (chips, com All/None) e um
-  orçamento de AP; distribui o AP pra **maximizar a soma** desses atributos (compra os pontos mais baratos
-  primeiro). Independe de posição; mantém os evoluídos como piso.
-- **Atletas UT** — lista compacta 80+, custo calculado pelos mesmos tiers do editor e cap no máximo
-  do arquétipo.
-- **Desfazer/refazer** — botões e atalhos Ctrl/Cmd+Z, Ctrl/Cmd+Y e Cmd+Shift+Z.
-- **Compartilhar via URL** (`?b=...`, formato v2 com leitura de links v1) e
-  **salvar como imagem** com os OVRs estimados por posição.
-- **Builds da Comunidade** — galeria pública sem conta: o autor informa seu nome
-  e o nome da build, o navegador memoriza o autor e guarda localmente a credencial
-  de exclusão daquela publicação. O backend opcional usa Supabase + Cloudflare
-  Turnstile, com RLS, validação, CORS e limite de publicações.
-
-As 4 abas (PlayStyles / Specializations / Body / Community Builds) abrem **modais**;
-a área principal mostra os atributos + o painel de detalhe do atributo selecionado.
-
-## Estrutura
-
+```bash
+cd clubs-builder
+python3 -m http.server 4173 --bind 0.0.0.0
+# open http://localhost:4173
 ```
+
+## Included features (parity with the original)
+
+- **Archetypes** (13: 2 GK, 4 DEF, 4 MID, 3 FWD) with position filtering.
+- **Attributes** — 8 categories with a faithful **AP (Attribute Points)** system:
+  total AP per level, per-point cost based on tier and value, and tier discounts
+  for key attributes. The maximum level is **100**, with **3167 total AP**. The
+  editor includes +/− controls, a slider, next-point cost, and a breakdown.
+- **Body** — height and weight (limited by the archetype) adjust attributes using
+  the actual formula and calculate **AcceleRATE** (Explosive/Lengthy/Controlled).
+- **PlayStyles** (modal) — 4 **signature** PlayStyles (upgraded to "+" at levels
+  30/50/75/95) plus 9 regular slots unlocked by level
+  (1/10/20/40/60/70/80/90/95). Locked PlayStyles provide **Quick Unlock**, which
+  purchases their requirements through the central AP calculation while
+  respecting archetype caps and available AP.
+- **Specializations** (modal) — 3 per archetype, each with attribute requirements.
+  They unlock when the requirements are met or through **Quick Unlock** (which
+  spends AP). Only one Specialization can be active at a time, replacing one of
+  the 4 signature slots with its PlayStyle+.
+- **Positions + estimated OVR** — select one or more outfield positions; GK is
+  automatic for goalkeepers. Each position is calculated independently by
+  `js/weights.js` using purchased attributes only:
+  `OVR = floor(intercept + Σ weight·attribute) - 1`, clamped to 1–99. Height and
+  weight affect in-match attributes, not the estimated lobby OVR. The expected
+  tolerance is ±1.
+- The v2 model was validated against Common/Rare base cards: 93.43% exact and
+  99.995% within ±1 across 19,363 outfield players; 88.05% exact and 100% within
+  ±1 across 2,528 players rated 75+; and 98.05% exact and 100% within ±1 across
+  2,303 goalkeepers.
+- **Optimize Overall** (modal) — two modes:
+  1. *Maximize overall for a given AP budget* (additional): allocates AP to
+     maximize overall.
+  2. *Minimum AP for a target overall*: finds the attribute levels needed to
+     reach the target while spending as little AP as possible.
+
+  With **multiple positions**, it uses MinMax: maximize the lowest OVR, then the
+  sum, and finally minimize AP. The search runs in a Web Worker with Pareto
+  pruning and limits of 250,000 states/2 seconds. Results report `optimal` when
+  proven or `best-found` when the bounded search returns its strongest result.
+  Before applying a result, costs, caps, and OVRs are recalculated; AP that does
+  not affect the objective is removed; and impossible targets show the highest
+  OVR that can actually be reached. Closing the modal cancels an active search.
+  Previously upgraded attributes are preserved as a floor.
+
+  The modal also lets you **exclude attributes** (gray/struck-through chips).
+  The optimizer will not spend AP on them; they remain fixed but still count
+  toward overall at their current value.
+- **Maximize Attribute Sum** ("Σ Max Sum" button) — select attributes (chips with
+  All/None) and an AP budget. AP is distributed to **maximize the sum** of those
+  attributes by purchasing the cheapest points first. This is independent of
+  position and preserves existing upgrades as a floor.
+- **UT players** — compact 80+ list, with costs calculated using the same editor
+  tiers and values capped at the archetype maximum.
+- **Undo/redo** — buttons and shortcuts Ctrl/Cmd+Z, Ctrl/Cmd+Y, and Cmd+Shift+Z.
+- **Share by URL** (`?b=...`, v2 format with v1 link support) and **save as an
+  image** with estimated OVRs by position.
+- **Community Builds** — a public, account-free gallery. Authors enter their name
+  and a build name; the browser remembers the author and locally stores the
+  deletion credential for each publication. The optional backend uses Supabase
+  and Cloudflare Turnstile with RLS, validation, CORS, and publication limits.
+
+The 4 tabs (PlayStyles / Specializations / Body / Community Builds) open
+**modals**. The main area displays attributes and the selected attribute's
+detail panel.
+
+## Structure
+
+```text
 clubs-builder/
-  index.html          # entrada do site no GitHub Pages
-  site.webmanifest    # metadados de instalação/PWA
+  index.html          # GitHub Pages entry point
+  site.webmanifest    # installation/PWA metadata
   assets/
-    fonts/            # família Cruyff Sans usada pela interface
-    ui/               # ícones próprios da interface (AP e Key Attribute)
-  archetypes/         # ícones SVG dos arquétipos
-  playstyles/         # ícones PNG dos PlayStyles e PlayStyles+
+    fonts/            # Cruyff Sans family used by the interface
+    ui/               # custom interface icons (AP and Key Attribute)
+  archetypes/         # archetype SVG icons
+  playstyles/         # PlayStyle and PlayStyle+ PNG icons
   css/
-    vendor.css        # Tailwind compilado, reaproveitado do original
-    app.css           # complementos (utilitários ausentes + ajustes)
+    vendor.css        # compiled Tailwind reused from the original
+    app.css           # additions (missing utilities and adjustments)
   js/
-    data.js           # TODOS os dados do jogo (extraídos e normalizados)
-    calc.js           # mecânicas puras (AP, body, PlayStyles, elegibilidade…)
-    optimizer-worker.js # solver multi-position fora da thread da interface
-    history.js        # histórico imutável de undo/redo
-    share.js          # URL (encode/decode) + export de imagem (canvas)
-    community-config.js # URL e site key públicas da galeria
-    community.js      # cliente da API + cache local + Turnstile
-    app.js            # estado + render + eventos
-  data/               # dataset UT compacto usado pela interface
-  supabase/           # migration e Edge Function de Community Builds
-  docs/               # ativação e contrato técnico do backend
-  tests/              # testes node:test + smoke test no navegador
+    data.js           # ALL game data (extracted and normalized)
+    calc.js           # pure mechanics (AP, body, PlayStyles, eligibility...)
+    optimizer-worker.js # multi-position solver outside the UI thread
+    history.js        # immutable undo/redo history
+    share.js          # URL encode/decode and canvas image export
+    community-config.js # public gallery URL and site key
+    community.js      # API client, local cache, and Turnstile
+    app.js            # state, rendering, and events
+  data/               # compact UT dataset used by the interface
+  supabase/           # Community Builds migration and Edge Function
+  docs/               # backend activation and technical contract
+  tests/              # node:test suite and browser smoke test
 ```
 
-## Ativar Builds da Comunidade
+## Enabling Community Builds
 
-A interface já funciona em estado de configuração, mas publicar e listar builds
-depende do backend. Siga [docs/COMMUNITY_SETUP.md](docs/COMMUNITY_SETUP.md).
-As credenciais secretas ficam no Supabase; somente a URL da função e a site key
-pública do Turnstile entram em `js/community-config.js`.
+The interface already supports its configured state, but publishing and listing
+builds requires the backend. Follow
+[docs/COMMUNITY_SETUP.md](docs/COMMUNITY_SETUP.md). Secrets stay in Supabase;
+only the function URL and public Turnstile site key belong in
+`js/community-config.js`.
 
-## Notas
+## Notes
 
-- Os dados foram extraídos fielmente dos chunks do build original (archetypes, atributos,
-  PlayStyles, tabelas de custo de AP e de AP por nível, traduções EN).
-- A interface é só em inglês (como o conteúdo-base).
-- O encoding da URL é próprio (compacto), **não** é compatível com o clubsbuilder.com.
-- Execute `node --test tests/*.test.js` para validar cálculos, modelo, solver,
-  compartilhamento e histórico.
-- A validação estatística completa do modelo usa o CSV original opcional:
-  `EAFC26_VALIDATION_CSV=/caminho/eafc26_ut_players.csv node --test tests/model-validation.test.js`.
-  Sem ele, somente esse teste pesado é ignorado; a suíte funcional permanece autocontida.
+- Data was faithfully extracted from the original build chunks (archetypes,
+  attributes, PlayStyles, AP cost tables, AP-per-level tables, and English
+  translations).
+- The interface is English-only, matching the source content.
+- URL encoding is custom and compact; it is **not** compatible with
+  clubsbuilder.com.
+- Run `node --test tests/*.test.js` to validate calculations, the model, solver,
+  sharing, and history.
+- Full statistical model validation uses the optional original CSV:
+  `EAFC26_VALIDATION_CSV=/path/to/eafc26_ut_players.csv node --test tests/model-validation.test.js`.
+  Without it, only that heavyweight test is skipped; the functional suite
+  remains self-contained.

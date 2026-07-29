@@ -132,14 +132,14 @@ test('publish validates, posts JSON, and saves author and management token', asy
     fetch: async (url, options) => {
       calls.push({ url, options });
       return response(201, {
-        build: { id: 'build-42', authorName: 'João', buildName: 'Creator' },
+        build: { id: 'build-42', authorName: 'John', buildName: 'Creator' },
         manageToken: 'a'.repeat(43),
       });
     },
   });
 
   const result = await context.Community.publish({
-    authorName: '  João   da Silva ',
+    authorName: '  John   Smith ',
     buildName: '  Creator   CAM ',
     buildCode: 'encoded-build',
     turnstileToken: 'verified-token',
@@ -150,12 +150,12 @@ test('publish validates, posts JSON, and saves author and management token', asy
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(calls[0].options.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(calls[0].options.body), {
-    authorName: 'João da Silva',
+    authorName: 'John Smith',
     buildName: 'Creator CAM',
     buildCode: 'encoded-build',
     turnstileToken: 'verified-token',
   });
-  assert.equal(context.Community.getSavedAuthor(), 'João da Silva');
+  assert.equal(context.Community.getSavedAuthor(), 'John Smith');
   assert.equal(context.Community.getManageToken('build-42'), 'a'.repeat(43));
   assert.equal(context.Community.saveAuthor('  New   name  '), true);
   assert.equal(context.Community.getSavedAuthor(), 'New name');

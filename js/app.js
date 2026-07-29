@@ -1,15 +1,16 @@
 /* ============================================================================
- * app.js — Controller do FC 26 Pro Clubs Builder (estado + UI + eventos).
- * Layout fiel ao original: atributos sempre visíveis + painel de detalhe à direita;
- * as abas (Body / PlayStyles / Specializations) abrem MODAIS.
- * Depende de window.DATA, window.Calc, window.Share.
+ * app.js — FC 26 Pro Clubs Builder controller (state + UI + events).
+ * Faithful to the original layout: attributes are always visible with the detail
+ * panel on the right; the tabs (Body / PlayStyles / Specializations /
+ * Community Builds) open MODALS.
+ * Depends on window.DATA, window.Calc, and window.Share.
  * ========================================================================== */
 (function () {
   const D = window.DATA, C = window.Calc, S = window.Share, L = window.DATA.labels;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // -------------------- estado --------------------
+  // -------------------- state --------------------
   function defaultBuild() {
     return {
       archetypeId: null, level: 1,
@@ -32,17 +33,18 @@
     communityRemovingId: null, communityRequestId: 0, communityController: null, communityPublishController: null,
   };
   const OUTFIELD_POSITIONS = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
-  // ponytail: teto de linhas desenhadas por render; sobe se a lista virar virtualizada.
+  // ponytail: maximum rows drawn per render; increase if the list becomes virtualized.
   const UT_RENDER_LIMIT = 250;
   const HISTORY_LIMIT = 100;
   const history = window.BuildHistory.create(HISTORY_LIMIT);
   let modalReturnFocus = null;
 
-  // Recriar uma seção com innerHTML descarta o elemento focado — o campo de LVL e a busca de
-  // atletas perdiam foco (e o resto do que estava sendo digitado) a cada tecla. Guarda id +
-  // seleção antes da troca e devolve depois. Vale para qualquer input em região re-renderizada.
+  // Rebuilding a section with innerHTML discards the focused element — the LVL field
+  // and player search lost focus (and the rest of the input) on every keystroke. Save
+  // the id + selection before replacement and restore them afterward. This applies to
+  // any input inside a re-rendered region.
   function selectionOf(el) {
-    try { return [el.selectionStart, el.selectionEnd]; } catch (e) { return null; } // type=number lança
+    try { return [el.selectionStart, el.selectionEnd]; } catch (e) { return null; } // type=number throws
   }
   function keepFocus(update) {
     const active = document.activeElement;
@@ -79,7 +81,7 @@
   function restoreBuild(snapshot) {
     build = C.normalizeBuild(Object.assign(defaultBuild(), cloneBuild(snapshot))).build;
     ui.selectedAttr = null;
-    bodyDragBefore = null; // um arrasto pendente não pode ser gravado contra um estado já descartado
+    bodyDragBefore = null; // a pending drag cannot be recorded against an already discarded state
     render();
   }
   function undoBuild() {
@@ -114,7 +116,7 @@
   const psDesc = (id) => (L.playStyle[id] && L.playStyle[id].desc) || '';
   const psIcon = (id) => { const p = C.playstyle(id); return p ? p.iconFileName : null; };
 
-  // -------------------- render principal --------------------
+  // -------------------- main render --------------------
   function render() {
     const d = C.derive(build);
     keepFocus(() => {
@@ -254,7 +256,7 @@
       </div>`;
   }
 
-  // -------------------- tabs (abrem modais) --------------------
+  // -------------------- tabs (open modals) --------------------
   function renderTabs() {
     const tabs = [
       ['playStyles', L.tabs.playStyles, true],
@@ -322,7 +324,7 @@
         ${attrMeter(a, cv)}
       </button>`;
   }
-  // skill moves / weak foot valem 2..5 estrelas — na barra de 1-99 um 3/5 aparecia vazio.
+  // skill moves / weak foot use 2..5 stars — on a 1–99 bar, 3/5 looked empty.
   function attrMeter(a, cv) {
     if (a.displayType === 'stars') {
       return `<span class="attr-stars">${'★'.repeat(cv)}<span class="attr-stars-off">${'★'.repeat(Math.max(0, a.maxValue - cv))}</span></span>`;
@@ -330,7 +332,7 @@
     return `<span class="attr-bar"><span class="attr-bar-fill" style="width:${((cv - 1) / 98) * 100}%;background-color:${C.barColor(cv)}"></span></span>`;
   }
 
-  // -------------------- painel de detalhe do atributo (direita, sempre) --------------------
+  // -------------------- attribute detail panel (always on the right) --------------------
   const placeholder = (msg) => `<div class="p-6 h-full flex items-center justify-center min-h-[300px]"><p class="text-t-disabled text-sm text-center">${esc(msg)}</p></div>`;
   const panelHead = (title, accent) => `<header class="detail-panel-head ${accent ? 'is-accent' : ''} p-4 border-b border-b-primary"><h3 class="font-bold text-t-secondary tracking-wide">${esc(title)}</h3></header>`;
   const apIcon = (className = '') => `<img src="assets/ui/ap.png" alt="AP" class="ap-icon ${className}" />`;
@@ -341,8 +343,8 @@
     panel.dataset.kind = 'summary';
     panel.innerHTML = buildSummary(d);
   }
-  // Sem atributo selecionado a coluna de 400px ficava só com um aviso cinza — agora carrega
-  // o que o usuário precisa pra decidir o próximo ponto de AP.
+  // With no selected attribute, the 400px column showed only a gray notice — it now
+  // contains what the user needs to choose the next AP point.
   function buildSummary(d) {
     const overalls = C.overallMapForValues(build.positions || [], d, null);
     const overallEntries = Object.entries(overalls);
@@ -452,7 +454,7 @@
       </div>`;
   }
 
-  // ==================== MODAIS ====================
+  // ==================== MODALS ====================
   function modalShell(title, bodyHtml) {
     return `
       <div class="flex items-center justify-between p-4 sm:p-5 border-b border-b-primary flex-shrink-0">
@@ -492,7 +494,7 @@
     box.innerHTML = modalShell(title, body);
     root.classList.remove('hidden'); root.classList.add('flex');
     setModalBackgroundInert(true);
-    if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus devolve depois se havia um campo
+    if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus restores the field afterward when needed
     if (ui.modal === 'community') queueMicrotask(mountCommunityTurnstile);
   }
 
@@ -943,7 +945,7 @@
       .filter((slot) => slot.playStyleId)
       .map((slot) => [slot.playStyleId, slot]));
 
-    // SLOTS (9 por nível) — clicar num slot vazio abre o seletor; clicar num cheio libera o slot.
+    // SLOTS (9 by level) — an empty slot opens the picker; a filled slot frees it.
     const unlockedSlotCount = d.slots.unlocked;
     const equippedCount = build.playstyles.length;
     const freeSlots = Math.max(0, unlockedSlotCount - equippedCount);
@@ -958,7 +960,7 @@
       return `<div class="ps-slot ps-slot-locked" title="Unlocks at level ${lvl}"><span class="ps-slot-plus">🔒</span><span class="ps-slot-hint">Lvl ${lvl}</span></div>`;
     }).join('');
 
-    // seletor: só o que já está desbloqueado e ainda não equipado
+    // picker: only items that are unlocked and not yet equipped
     const pickable = D.playstyles.filter((p) => !signatureById.has(p.id)
       && !build.playstyles.includes(p.id)
       && C.playstyleEligible(p, d.purchased));
@@ -1258,8 +1260,8 @@
       .finally(() => { ui.utLoading = false; if (ui.modal === 'utplayers') render(); });
   }
   const utImage = (p) => p.cardImagePath ? `https://game-assets.fut.gg/${p.cardImagePath}` : '';
-  // targetPlan depende só do archetype (base/max/tier por atributo), nunca dos valores atuais —
-  // então dá pra calcular uma vez por jogador em vez de 4k+ planos a cada tecla digitada.
+  // targetPlan depends only on the archetype (base/max/tier per attribute), never on
+  // current values — calculate it once per player instead of 4k+ plans per keystroke.
   function utPlan(player, d) {
     if (!d.arch) return { cost: 0, capped: 0, values: {} };
     const cache = ui.utPlanCache && ui.utPlanCache.archetypeId === d.arch.id
@@ -1277,8 +1279,8 @@
     ensureUtPlayers();
     if (ui.utLoading) return `<div class="p-8 text-center text-t-muted">Loading UT players…</div>`;
     if (ui.utError) return `<div class="p-8 text-center text-state-error">Could not load UT players: ${esc(ui.utError)}</div>`;
-    // Um archetype de linha não compra atributos de goleiro (e vice-versa), então cartas fora da
-    // família de posições do archetype seriam aplicadas pela metade — melhor nem listar.
+    // An outfield archetype cannot purchase goalkeeper attributes (and vice versa), so
+    // cards outside the archetype's position family would be applied only partially.
     const allowed = d.arch && d.arch.position === 'GK' ? ['GK'] : OUTFIELD_POSITIONS;
     const rows = (ui.utPlayers || []).filter((p) => p.positions.some((x) => allowed.includes(x)));
     const totalAP = d.ap.total;
@@ -1333,7 +1335,7 @@
       </div>`;
   }
 
-  // -------------------- mutações --------------------
+  // -------------------- mutations --------------------
   function setArchetype(id) {
     const arch = C.archetype(id);
     const hadWork = Object.keys(build.attributes).length || build.playstyles.length || Object.keys(build.playstylePurchases || {}).length;
@@ -1355,7 +1357,7 @@
     else if (mode === 'max') req = attr.maxValue;
     else if (mode === 'set') req = delta;
     else req += delta;
-    // só aumenta até onde o AP disponível permite (nunca deixa o AP negativo)
+    // only increase as far as available AP allows (never make AP negative)
     const v = C.affordableTarget(attr, d.ap.available, req);
     commitBuildChange(() => {
       if (v === attr.baseValue) delete build.attributes[id]; else build.attributes[id] = v;
@@ -1417,7 +1419,7 @@
     });
     toast(`${psName(id)} sold · ${plan.refund} AP refunded`);
   }
-  // Equipar é sempre explícito: o usuário clica um slot e escolhe. Quick Unlock só compra requisitos.
+  // Equipping is always explicit: the user selects a slot and chooses. Quick Unlock only buys requirements.
   function equipPlaystyle(id) {
     const d = C.derive(build);
     const ps = C.playstyle(id);
@@ -1468,7 +1470,7 @@
     const plan = C.requirementUnlockPlan(ps, d.categories);
     if (!plan.feasible) return toast('This PlayStyle cannot be unlocked with this archetype.');
     if (plan.cost > d.ap.available) return toast(`Not enough AP (need ${plan.cost}, have ${Math.max(0, d.ap.available)})`);
-    // Só compra os requisitos — NÃO ocupa slot. Equipar continua sendo uma escolha do usuário.
+    // Buy requirements only — do NOT occupy a slot. Equipping remains the user's choice.
     const before = {}, after = {};
     for (const id of Object.keys(plan.values)) {
       const attr = C.findAttr(d.categories, id);
@@ -1522,8 +1524,9 @@
     toast(`${player.name} applied · ${info.cost} AP`);
   }
 
-  // O slider de atributo é recriado a cada render, o que mataria o arrasto: durante o arrasto só
-  // atualizamos o número; o valor entra no build (e no histórico) quando o usuário solta.
+  // The attribute slider is rebuilt on every render, which would interrupt dragging:
+  // update only the number while dragging, then write the value to the build (and
+  // history) when the user releases it.
   function liveAttrRange(input) {
     const d = C.derive(build);
     const attr = C.findAttr(d.categories, ui.selectedAttr);
@@ -1534,7 +1537,7 @@
     if (readout) { readout.textContent = value; readout.style.color = C.barColor(value); }
   }
 
-  // Mesma ideia pro corpo: um arrasto vira UMA entrada de histórico, não vinte.
+  // Same approach for body controls: one drag becomes ONE history entry, not twenty.
   let bodyDragBefore = null;
   function commitBodyDrag() {
     if (!bodyDragBefore) return;
@@ -1549,7 +1552,7 @@
     const ro = document.querySelector(`[data-readout="${kind}"]`); if (ro) ro.textContent = value;
     const d = C.derive(build);
     renderSummary(d); renderAttributes(d);
-    if (ui.modal === 'body') { // atualiza o conteúdo do modal sem recriar os sliders
+    if (ui.modal === 'body') { // update modal content without rebuilding the sliders
       const aff = $('#body-affected');
       const badge = $('#accel-badge');
       const affected = d.arch.position === 'GK' ? D.gkAffectedAttributes : D.affectedAttributes;
@@ -1586,7 +1589,7 @@
       toast('Wait for the publication to finish.');
       return;
     }
-    commitBodyDrag(); // fechar no meio de um arrasto (Esc) não pode deixar o snapshot pendurado
+    commitBodyDrag(); // closing mid-drag (Esc) must not leave a pending snapshot
     if (ui.modal === 'optimize' && ui.optimizeController) {
       ui.optimizeRunId++;
       ui.optimizeController.abort();
@@ -1621,7 +1624,7 @@
     });
   }
 
-  // -------------------- eventos --------------------
+  // -------------------- events --------------------
   function init() {
     const fromUrl = S.fromUrl();
     let adjustedFromUrl = false;
@@ -1633,11 +1636,11 @@
 
     document.body.addEventListener('click', (e) => {
       const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
-      if (e.target.id === 'modal-root') return closeModal(); // clique no backdrop
+      if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
-      // Os chips são preferência de otimizador, não estado de build: mudam a URL mas não gastam
-      // uma entrada de desfazer (antes, marcar 20 atributos apagava o histórico real).
-      if (t.dataset.disableAttr) { // alterna sem re-render (preserva inputs do modal)
+      // Chips are optimizer preferences, not build state: they change the URL without
+      // consuming an undo entry (previously, marking 20 attributes erased real history).
+      if (t.dataset.disableAttr) { // toggle without re-rendering (preserves modal inputs)
         const id = t.dataset.disableAttr, i = build.disabledAttrs.indexOf(id);
         if (i >= 0) build.disabledAttrs.splice(i, 1); else build.disabledAttrs.push(id);
         t.classList.toggle('opt-attr-off');
@@ -1645,7 +1648,7 @@
         syncUrl();
         return;
       }
-      if (t.dataset.sumAttr) { // alterna inclusão no max-sum (sem re-render)
+      if (t.dataset.sumAttr) { // toggle max-sum inclusion (without re-rendering)
         const id = t.dataset.sumAttr, i = build.sumExcluded.indexOf(id);
         if (i >= 0) build.sumExcluded.splice(i, 1); else build.sumExcluded.push(id);
         t.classList.toggle('opt-attr-off');
@@ -1732,7 +1735,7 @@
       if (t.hasAttribute('data-attr')) {
         ui.selectedAttr = ui.selectedAttr === t.dataset.attr ? null : t.dataset.attr;
         render();
-        // fora do desktop o painel fica embaixo de toda a grade — sem isso o toque parece não fazer nada
+        // below desktop size the panel sits after the entire grid — scroll so the tap has visible feedback
         if (ui.selectedAttr && !matchMedia('(min-width: 1024px)').matches) $('#panel').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         return;
       }
@@ -1781,11 +1784,11 @@
     document.body.addEventListener('input', (e) => {
       const t = e.target;
       if (t.id === 'level-input') {
-        // Campo de texto (não number) pra poder devolver o cursor depois do re-render — Chrome
-        // proíbe setSelectionRange em input[type=number] e o cursor voltava pro início a cada tecla.
+        // Use a text field (not number) to restore the cursor after re-rendering — Chrome
+        // forbids setSelectionRange on input[type=number], which reset it on every keystroke.
         const raw = t.value.replace(/\D/g, '');
         if (raw !== t.value) t.value = raw;
-        if (!raw) return; // vazio = apagando pra redigitar; só confirma quando há número
+        if (!raw) return; // empty = clearing to retype; commit only when a number exists
         return commitBuildChange(() => { build.level = C.clamp(parseInt(raw, 10) || 1, 1, D.maxLevel); });
       }
       if (t.id === 'ut-search') { ui.utQuery = t.value; return refreshModal(); }
@@ -1806,7 +1809,7 @@
       void publishCommunityBuild();
     });
     document.body.addEventListener('change', (e) => {
-      if (e.target.id === 'level-input') return render(); // devolve o valor normalizado ao sair do campo
+      if (e.target.id === 'level-input') return render(); // restore the normalized value when leaving the field
       if (e.target.dataset.body) return commitBodyDrag();
       if (e.target.hasAttribute('data-attr-range')) return adjustAttr(ui.selectedAttr, parseInt(e.target.value, 10), 'set');
     });
@@ -1843,7 +1846,7 @@
       }
       const key = e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
-      // só campos de digitação: com um slider focado Ctrl+Z continua desfazendo o build
+      // typing fields only: with a focused slider, Ctrl+Z still undoes the build
       const typing = e.target.matches && e.target.matches('input:not([type="range"]), textarea, select');
       if (mod && key === 'z' && !e.shiftKey && !typing) { e.preventDefault(); return undoBuild(); }
       if (mod && (key === 'y' || (key === 'z' && e.shiftKey)) && !typing) { e.preventDefault(); return redoBuild(); }
