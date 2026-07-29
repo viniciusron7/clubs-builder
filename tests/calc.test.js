@@ -199,6 +199,83 @@ test('UT target plans use the same tiers and cap values at archetype maximums', 
   assert.equal(plan.cost, 217);
 });
 
+test('Max sum matches exact group knapsack across every archetype and AP curve', () => {
+  const { Calc, DATA } = createContext();
+  const visibleNumericAttributes = (derived) => derived.categories
+    .filter((category) => derived.arch.position === 'GK' || category.id !== 'goalkeeping')
+    .flatMap((category) => category.attributes)
+    .filter((attr) => attr.displayType !== 'stars');
+  const exactMaxPoints = (attrs, budget) => {
+    let minimumCosts = [0];
+    for (const attr of attrs) {
+      const options = [{ points: 0, cost: 0 }];
+      let cost = 0;
+      for (let value = attr.currentValue + 1; value <= attr.maxValue; value++) {
+        cost += Calc.apCostAt(attr.tier, value);
+        options.push({ points: value - attr.currentValue, cost });
+      }
+      const next = Array(minimumCosts.length + options.length - 1).fill(Infinity);
+      for (let currentPoints = 0; currentPoints < minimumCosts.length; currentPoints++) {
+        if (!Number.isFinite(minimumCosts[currentPoints])) continue;
+        for (const option of options) {
+          const optionCost = minimumCosts[currentPoints] + option.cost;
+          const nextPoints = currentPoints + option.points;
+          if (optionCost < next[nextPoints]) next[nextPoints] = optionCost;
+        }
+      }
+      minimumCosts = next;
+    }
+    let points = 0;
+    for (let candidate = 0; candidate < minimumCosts.length; candidate++) {
+      if (minimumCosts[candidate] <= budget) points = candidate;
+    }
+    return { points, cost: minimumCosts[points] };
+  };
+
+  for (const table of Object.values(DATA.apCostTable)) {
+    let previousCost = -Infinity;
+    for (const range of table.costRanges) {
+      assert.equal(range.apCost >= previousCost, true, `${table.id} AP costs must be non-decreasing`);
+      previousCost = range.apCost;
+    }
+  }
+
+  let checked = 0;
+  for (const arch of DATA.archetypes) {
+    const positions = arch.position === 'GK' ? ['GK'] : ['ST'];
+    const base = Calc.derive(defaultBuild({ archetypeId: arch.id, positions }));
+    const evolvedAttributes = {};
+    visibleNumericAttributes(base).forEach((attr, index) => {
+      const value = Math.min(attr.maxValue, attr.baseValue + ((index * 7) % 9));
+      if (value > attr.baseValue) evolvedAttributes[attr.id] = value;
+    });
+
+    const scenarios = [
+      { name: 'base', values: {}, includeSubset: false },
+      { name: 'evolved', values: evolvedAttributes, includeSubset: true },
+    ];
+    for (const scenario of scenarios) {
+      const derived = Calc.derive(defaultBuild({ archetypeId: arch.id, positions, attributes: scenario.values }));
+      const allAttrs = visibleNumericAttributes(derived);
+      const attrs = scenario.includeSubset ? allAttrs.filter((attr, index) => index % 3 !== 1) : allAttrs;
+      const include = attrs.map((attr) => attr.id);
+      const startSum = attrs.reduce((total, attr) => total + attr.currentValue, 0);
+
+      for (const budget of [0, 7, 29, 100, 333, 999]) {
+        const expected = exactMaxPoints(attrs, budget);
+        const actual = Calc.maximizeSum(derived, { include, budget });
+        const label = `${arch.id} ${scenario.name} ${budget} AP`;
+        assert.equal(actual.points, expected.points, `${label}: points`);
+        assert.equal(actual.added, expected.cost, `${label}: cost`);
+        assert.equal(actual.sum, startSum + expected.points, `${label}: sum`);
+        assert.equal(actual.added <= budget, true, `${label}: budget`);
+        checked++;
+      }
+    }
+  }
+  assert.equal(checked, DATA.archetypes.length * 12);
+});
+
 test('single-position optimizer is exact and treats AP as a ceiling', async () => {
   const { Calc } = createContext();
   const build = defaultBuild({ archetypeId: 'fwd_finisher', positions: ['ST'] });
@@ -301,7 +378,64 @@ test('multi-position optimizer beats the reported Creator CAM CM CDM regression 
   );
   assert.deepEqual({ ...result.overalls }, { CAM: 94, CM: 95, CDM: 92 });
   assert.deepEqual({ ...result.objective }, { min: 92, sum: 281 });
-  assert.equal(result.status, 'optimal');
+  // Without a browser Worker, the exact OVR pair is certified while the
+  // separate minimum-AP polish remains unavailable.
+  assert.equal(result.status, 'ovr-optimal');
+});
+
+test('multi-position sum certificate accounts for lower clamping and never overclaims', async () => {
+  const context = createContext();
+  const { Calc } = context;
+  const baseRaws = [2.9367021271, -0.7115444101, 1.7211302193];
+  const definitions = [
+    { id: 'a0', tier: 'tier0', maxValue: 62, weights: [0.073015, 0.170258, 1.007353] },
+    { id: 'a1', tier: 'tier2', maxValue: 62, weights: [0.809725, 0.723341, 0.987745] },
+    { id: 'a2', tier: 'tier1', maxValue: 61, weights: [1.263918, 0.215547, 0.025496] },
+    { id: 'a3', tier: 'tier2', maxValue: 62, weights: [0.08947, 0.811624, 1.479769] },
+  ];
+  context.OVERALL_MODEL = {
+    version: 2,
+    gameCalibrationOffset: -1,
+    limits: { min: 1, max: 99 },
+    positions: Object.fromEntries(baseRaws.map((raw, positionIndex) => [
+      `P${positionIndex}`,
+      {
+        intercept: raw - definitions.reduce((sum, attr) => sum + attr.weights[positionIndex] * 60, 0),
+        weights: Object.fromEntries(definitions.map((attr) => [attr.id, attr.weights[positionIndex]])),
+      },
+    ])),
+  };
+  const derived = {
+    arch: { position: 'MID' },
+    categories: [{
+      id: 'synthetic',
+      attributes: definitions.map((attr) => ({
+        id: attr.id,
+        tier: attr.tier,
+        baseValue: 60,
+        currentValue: 60,
+        maxValue: attr.maxValue,
+      })),
+    }],
+    ap: { total: 7, spent: 0, available: 7 },
+  };
+  const positions = ['P0', 'P1', 'P2'];
+  const result = await Calc.optimize(derived, {
+    positions,
+    mode: 'max',
+    additionalAP: 7,
+    disabled: [],
+  });
+  const exhaustiveCounterexample = Calc.overallMapForValues(positions, derived, {
+    a0: 62,
+    a1: 61,
+    a2: 61,
+    a3: 61,
+  });
+
+  assert.deepEqual({ ...result.overalls }, { P0: 4, P1: 1, P2: 4 });
+  assert.deepEqual({ ...exhaustiveCounterexample }, { P0: 4, P1: 1, P2: 5 });
+  assert.equal(result.status, 'best-found');
 });
 
 test('weighted multi-position search covers other archetypes and position sets', async () => {

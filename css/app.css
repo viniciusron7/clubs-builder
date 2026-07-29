@@ -2011,6 +2011,12 @@ body::before {
   font-size: .72rem;
 }
 
+.attribute-workspace .build-summary-attribute-sum {
+  color: var(--attribute-green);
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .attribute-workspace .build-summary-playstyles,
 .attribute-workspace .attribute-related {
   padding-top: 1.05rem;

@@ -261,6 +261,17 @@
     if (!d.arch) return d.categories;
     return d.arch.position === 'GK' ? d.categories : d.categories.filter((c) => c.id !== 'goalkeeping');
   }
+  function numericVisibleAttributes(d) {
+    return visibleCategories(d)
+      .flatMap((category) => category.attributes)
+      .filter((attr) => attr.displayType !== 'stars');
+  }
+  function sumConsidered(d) {
+    return numericVisibleAttributes(d).map((attr) => attr.id);
+  }
+  function currentAttributeSum(d) {
+    return numericVisibleAttributes(d).reduce((total, attr) => total + attr.currentValue, 0);
+  }
   function renderAttributes(d) {
     if (!d.arch) {
       $('#attributes').innerHTML = `<div class="col-span-full bg-app-panel rounded-xl border border-b-primary p-10 text-center text-t-muted">Select an archetype above to start building.</div>`;
@@ -356,6 +367,7 @@
         </section>
 
         <section class="build-summary-details">
+          ${row('Attribute sum', currentAttributeSum(d), 'build-summary-attribute-sum')}
           ${row('Body', `${build.height}cm / ${build.weight}kg`)}
           ${d.accel ? row('AcceleRATE', d.accel, 'text-state-info') : ''}
           ${row('PlayStyle slots', `${equipped.length} / ${d.slots.unlocked}`)}
@@ -712,7 +724,9 @@
     ui.optimizeController = null;
     if (button) { button.disabled = false; button.textContent = 'Run & Apply'; }
     if (!sameBuild(sourceBuild, build)) return toast('Build changed while optimizing. Run it again.');
-    const proof = res.status === 'optimal' ? 'optimal' : 'best found';
+    const proof = res.status === 'optimal'
+      ? 'optimal'
+      : res.status === 'ovr-optimal' ? 'OVR optimal' : 'best found';
     let msg;
     if (mode === 'max') {
       msg = `${build.positions.length > 1 ? 'Lowest Est. OVR' : 'Est. OVR'} → ${res.overall} · spent ${res.spent} AP · ${proof}`;
@@ -744,14 +758,6 @@
   }
 
   // ---- Maximize attribute sum modal ----
-  function sumConsidered(d) {
-    // atributos numéricos das categorias VISÍVEIS (exclui goalkeeping p/ linha e skill/weak stars)
-    const ids = [];
-    for (const c of visibleCategories(d)) for (const a of c.attributes) {
-      if (!String(a.tier).startsWith('star')) ids.push(a.id);
-    }
-    return ids;
-  }
   function maxSumModal(d) {
     const remaining = Math.max(0, d.ap.total - d.ap.spent);
     const considered = sumConsidered(d);

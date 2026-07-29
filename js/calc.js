@@ -182,6 +182,7 @@ window.Calc = (function () {
   // Builder ids differ from the model for two historical attributes.
   const PESO_KEY = { att_position: 'att_positioning', def_aware: 'defensive_awareness' };
   const OVR_EPS = 1e-9;
+  const OVR_MICRO_SCALE = 1000000;
   const overallModel = () => window.OVERALL_MODEL || {};
   const legacyWeights = () => window.OVERALL_WEIGHTS || {};
   function overallOffset() {
@@ -471,10 +472,20 @@ window.Calc = (function () {
   }
 
   function multiWorkerProblem(attrs, budget, baseRaws, mode, targetOverall) {
+    // Outfield weights/intercepts use six decimal places. Keeping a parallel
+    // integer representation lets the exact AP-polish phase avoid solver
+    // tolerances at OVR floor boundaries.
+    const exactMicro = Number.isInteger(overallOffset())
+      && baseRaws.every((raw) =>
+      Math.abs(raw * OVR_MICRO_SCALE - Math.round(raw * OVR_MICRO_SCALE)) < 1e-4)
+      && attrs.every((attr) => attr.weights.every((weight) =>
+        Math.abs(weight * OVR_MICRO_SCALE - Math.round(weight * OVR_MICRO_SCALE)) < 1e-6));
     return {
       mode,
       budget: Math.max(0, Math.floor(budget)),
       baseRaws,
+      baseRawUnits: exactMicro ? baseRaws.map((raw) => Math.round(raw * OVR_MICRO_SCALE)) : null,
+      exactMicro,
       overallOffset: overallOffset(),
       targetOverall: targetOverall == null ? null : clamp(Math.floor(targetOverall), 1, 99),
       stateLimit: 250000,
@@ -482,7 +493,14 @@ window.Calc = (function () {
       attrs: attrs.map((a) => ({
         id: a.id,
         value: a.val,
-        options: upgradeOptions(a).map((opt) => ({ value: a.val + opt.k, cost: opt.cost, gains: opt.gains })),
+        options: upgradeOptions(a).map((opt) => ({
+          value: a.val + opt.k,
+          cost: opt.cost,
+          gains: opt.gains,
+          gainUnits: exactMicro
+            ? a.weights.map((weight) => Math.round(weight * OVR_MICRO_SCALE) * opt.k)
+            : null,
+        })),
       })),
     };
   }
@@ -529,7 +547,7 @@ window.Calc = (function () {
           const nextBudget = currentBudget + option.cost;
           if (nextBudget > cappedBudget) break;
           const nextGain = currentGain + option.scalarGain;
-          if (nextGain > next[nextBudget] + OVR_EPS) {
+          if (nextGain > next[nextBudget]) {
             next[nextBudget] = nextGain;
             back[nextBudget] = optionIndex;
           }
@@ -542,7 +560,7 @@ window.Calc = (function () {
 
     let chosenBudget = 0;
     for (let currentBudget = 1; currentBudget <= cappedBudget; currentBudget++) {
-      if (dp[currentBudget] > dp[chosenBudget] + OVR_EPS) chosenBudget = currentBudget;
+      if (dp[currentBudget] > dp[chosenBudget]) chosenBudget = currentBudget;
     }
     const values = {};
     let remainingBudget = chosenBudget;
@@ -566,6 +584,7 @@ window.Calc = (function () {
     const greedyPlan = fastMaxMinPlan(attrs, budget, baseRaws, mode === 'min' ? targetOverall : null);
     if (mode !== 'max' || !baseRaws.length) return { ...greedyPlan, status: 'best-found' };
 
+    const monotoneWeights = attrs.every((attr) => attr.weights.every((weight) => weight >= 0));
     const candidates = [greedyPlan];
     const equal = baseRaws.map(() => 1);
     const coefficientSets = [equal];
@@ -609,7 +628,7 @@ window.Calc = (function () {
       seenCoefficients.add(key);
       const candidate = exactWeightedMultiPlan(attrs, budget, coefficients);
       candidates.push(candidate);
-      if (coefficients.every((coefficient) => coefficient === 1)) {
+      if (monotoneWeights && coefficients.every((coefficient) => coefficient === 1)) {
         rawSumUpper = baseRaws.reduce((sum, raw) => sum + raw, 0) + candidate.scalarGain;
       }
     });
@@ -627,9 +646,21 @@ window.Calc = (function () {
         bestEvaluation = evaluation;
       }
     });
-    const sumUpper = rawSumUpper == null
-      ? null
-      : Math.min(baseRaws.length * 99, Math.floor(rawSumUpper + OVR_EPS) + baseRaws.length * overallOffset());
+    let sumUpper = null;
+    if (rawSumUpper != null) {
+      const limits = overallModel().limits || { min: 1, max: 99 };
+      const offset = overallOffset();
+      // Σfloor(rawᵢ + EPS) <= floor(Σrawᵢ + n·EPS). The lower-clamp
+      // correction makes this a universal upper bound, including synthetic
+      // formulas whose baseline raw score is below the model minimum.
+      const lowerClampCorrection = baseRaws.reduce((correction, raw) => {
+        const baselineUnclamped = Math.floor(raw + OVR_EPS) + offset;
+        return correction + Math.max(0, limits.min - baselineUnclamped);
+      }, 0);
+      const rawFloorUpper = Math.floor(rawSumUpper + baseRaws.length * OVR_EPS)
+        + baseRaws.length * offset;
+      sumUpper = Math.min(baseRaws.length * limits.max, rawFloorUpper + lowerClampCorrection);
+    }
     return { ...best, sumUpper, status: 'best-found' };
   }
 
@@ -656,7 +687,8 @@ window.Calc = (function () {
         cleanup();
         if (error) reject(error); else resolve(result);
       };
-      const timer = setTimeout(() => finish(fallback()), problem.timeLimitMs + 750);
+      const workerGraceMs = problem.polish ? 10000 : 750;
+      const timer = setTimeout(() => finish(fallback()), problem.timeLimitMs + workerGraceMs);
       const cancel = () => finish(null, optimizerAbortError());
       if (signal) signal.addEventListener('abort', cancel, { once: true });
       worker.onmessage = (event) => finish(event.data && event.data.ok ? event.data.result : fallback());
@@ -755,6 +787,15 @@ window.Calc = (function () {
       const fallback = fallbackMultiPlan(attrs, budget, baseRaws, 'max', null);
       problem.seedValues = fallback.values;
       maxSumUpper = fallback.sumUpper;
+      if (problem.exactMicro && maxSumUpper != null) {
+        problem.polish = {
+          targetMin: maximumObjective.min,
+          targetSum: maxSumUpper,
+          maximumOveralls: positions.map((position) => maximumObjective.overalls[position]),
+          scale: OVR_MICRO_SCALE,
+          timeLimitSeconds: 5,
+        };
+      }
       planBudget = budget;
       plan = await runMultiWorker(problem, () => fallback, opts.signal);
     } else if (mode === 'max') {
@@ -800,13 +841,15 @@ window.Calc = (function () {
     objective = { overalls: trimmed.overalls, min: trimmed.min, sum: trimmed.sum };
     feasible = mode === 'max' || objective.min >= target;
     let status = repaired ? 'best-found' : (plan.status || 'best-found');
-    // Certificado barato: todos os atributos no máximo limitam o melhor "menor OVR";
-    // a DP de pesos iguais limita a soma inteira porque Σfloor(raw) <= floor(Σraw).
+    // Todos os atributos no máximo limitam o melhor menor OVR; a DP de pesos
+    // iguais limita a soma inteira. Se o Worker também terminou o polish exato,
+    // "optimal" inclui o desempate por menor AP. Caso contrário, os OVRs estão
+    // provados, mas o custo continua identificado separadamente.
     if (mode === 'max' && multi
       && objective.min === maximumObjective.min
       && maxSumUpper != null
       && objective.sum === maxSumUpper) {
-      status = 'optimal';
+      status = status === 'optimal' ? 'optimal' : 'ovr-optimal';
     }
     return {
       values,

@@ -99,6 +99,33 @@ test('bounded solver keeps a stronger deterministic seed', () => {
   assert.equal(actual.objective.sum, expected.sum);
 });
 
+test('exact solver does not merge distinct sub-micro OVR gains', () => {
+  const { MultiOverallSolver } = createContext(['js/optimizer-worker.js']);
+  const problem = {
+    mode: 'max',
+    budget: 5,
+    overallOffset: 0,
+    baseRaws: [80.99999998190721, 80.99999856130547],
+    stateLimit: 250000,
+    timeLimitMs: 2000,
+    attrs: [
+      { id: 'a0', value: 60, options: [{ value: 60, cost: 0, gains: [0, 0] }, { value: 61, cost: 1, gains: [0.0000007, 0.0000002] }, { value: 62, cost: 4, gains: [0.0000011, 0.0000009] }] },
+      { id: 'a1', value: 60, options: [{ value: 60, cost: 0, gains: [0, 0] }, { value: 61, cost: 1, gains: [0, 0.0000003] }, { value: 62, cost: 4, gains: [0.0000007, 0.0000004] }] },
+      { id: 'a2', value: 60, options: [{ value: 60, cost: 0, gains: [0, 0] }, { value: 61, cost: 2, gains: [0.0000001, 0] }, { value: 62, cost: 3, gains: [0.0000006, 0.0000005] }] },
+      { id: 'a3', value: 60, options: [{ value: 60, cost: 0, gains: [0, 0] }, { value: 61, cost: 2, gains: [0.0000003, 0.0000005] }, { value: 62, cost: 4, gains: [0.0000007, 0.0000012] }] },
+      { id: 'a4', value: 60, options: [{ value: 60, cost: 0, gains: [0, 0] }, { value: 61, cost: 1, gains: [0.0000008, 0] }, { value: 62, cost: 4, gains: [0.0000015, 0.0000005] }] },
+    ],
+  };
+  const expected = enumerate(problem);
+  const actual = MultiOverallSolver.solve(problem);
+
+  assert.equal(actual.status, 'optimal');
+  assert.equal(actual.objective.min, expected.min);
+  assert.equal(actual.objective.sum, expected.sum);
+  assert.equal(actual.added, expected.cost);
+  assert.deepEqual([...actual.overalls], [81, 81]);
+});
+
 test('solver matches exhaustive search across deterministic reduced problems', () => {
   const { MultiOverallSolver } = createContext(['js/optimizer-worker.js']);
   let seed = 0x5eed1234;

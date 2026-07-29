@@ -66,7 +66,7 @@
     if (!incumbent) return true;
     const aDeficit = targetDeficit(problem, candidate);
     const bDeficit = targetDeficit(problem, incumbent);
-    if (Math.abs(aDeficit - bDeficit) > EPS) return aDeficit < bDeficit;
+    if (aDeficit !== bDeficit) return aDeficit < bDeficit;
     if (candidate.cost !== incumbent.cost) return candidate.cost < incumbent.cost;
     return compareChoices(candidate.choices, incumbent.choices) < 0;
   }
@@ -125,7 +125,7 @@
   function dominates(a, b) {
     if (a.cost > b.cost) return false;
     for (let index = 0; index < a.gains.length; index++) {
-      if (a.gains[index] + EPS < b.gains[index]) return false;
+      if (a.gains[index] < b.gains[index]) return false;
     }
     return true;
   }
@@ -133,7 +133,9 @@
   function dedupe(states) {
     const map = new Map();
     for (const state of states) {
-      const key = state.gains.map((gain) => gain.toFixed(6)).join('|');
+      // Rounding gains here can merge states on opposite sides of an OVR
+      // boundary and produce a false proof of optimality.
+      const key = state.gains.map((gain) => String(gain)).join('|');
       const existing = map.get(key);
       if (!existing || state.cost < existing.cost || (state.cost === existing.cost && compareChoices(state.choices, existing.choices) < 0)) map.set(key, state);
     }
@@ -221,6 +223,159 @@
       state.gains = addVectors(state.gains, option.gains);
     }
     return state.cost <= problem.budget ? state : null;
+  }
+
+  function lpExpression(terms) {
+    const filtered = terms.filter((term) => Number.isFinite(term.coefficient) && term.coefficient !== 0);
+    if (!filtered.length) return '0';
+    return filtered.map((term, index) => {
+      const negative = term.coefficient < 0;
+      const sign = index === 0 ? (negative ? '- ' : '') : (negative ? ' - ' : ' + ');
+      return `${sign}${Math.abs(term.coefficient)} ${term.name}`;
+    }).join('');
+  }
+
+  function buildPolishModel(problem, incumbent) {
+    const polish = problem.polish;
+    const dimensions = problem.baseRaws.length;
+    if (!polish || !problem.exactMicro || !Array.isArray(problem.baseRawUnits)
+      || problem.baseRawUnits.length !== dimensions
+      || !Array.isArray(polish.maximumOveralls)
+      || polish.maximumOveralls.length !== dimensions
+      || !problem.attrs.every((attr) => Array.isArray(attr.options)
+        && attr.options.length > 0
+        && attr.options.every((option) => Array.isArray(option.gainUnits)
+          && option.gainUnits.length === dimensions
+          && option.gainUnits.every(Number.isInteger)))) return null;
+
+    const objectiveTerms = [];
+    const budgetTerms = [];
+    const targetSumTerms = [];
+    const rawTerms = Array.from({ length: dimensions }, () => []);
+    const constraints = [];
+    const binaries = [];
+    const optionVariables = [];
+
+    problem.attrs.forEach((attr, attrIndex) => {
+      const pickTerms = [];
+      const variables = [];
+      attr.options.forEach((option, optionIndex) => {
+        const name = `x_${attrIndex}_${optionIndex}`;
+        variables.push(name);
+        binaries.push(name);
+        pickTerms.push({ coefficient: 1, name });
+        objectiveTerms.push({ coefficient: option.cost, name });
+        budgetTerms.push({ coefficient: option.cost, name });
+        option.gainUnits.forEach((gain, positionIndex) => {
+          rawTerms[positionIndex].push({ coefficient: gain, name });
+        });
+      });
+      optionVariables.push(variables);
+      constraints.push(`pick_attr_${attrIndex}: ${lpExpression(pickTerms)} = 1`);
+    });
+
+    for (let positionIndex = 0; positionIndex < dimensions; positionIndex++) {
+      const pickTerms = [];
+      const maximum = Math.floor(polish.maximumOveralls[positionIndex]);
+      if (maximum < polish.targetMin) return null;
+      for (let overall = polish.targetMin; overall <= maximum; overall++) {
+        const name = `y_${positionIndex}_${overall}`;
+        const requiredUnits = (overall - overallOffset(problem)) * polish.scale
+          - problem.baseRawUnits[positionIndex];
+        binaries.push(name);
+        pickTerms.push({ coefficient: 1, name });
+        targetSumTerms.push({ coefficient: overall, name });
+        rawTerms[positionIndex].push({ coefficient: -requiredUnits, name });
+      }
+      constraints.push(`pick_ovr_${positionIndex}: ${lpExpression(pickTerms)} = 1`);
+      constraints.push(`raw_${positionIndex}: ${lpExpression(rawTerms[positionIndex])} >= 0`);
+    }
+
+    const costCeiling = Math.min(problem.budget, incumbent.added);
+    constraints.push(`budget: ${lpExpression(budgetTerms)} <= ${costCeiling}`);
+    constraints.push(`target_sum: ${lpExpression(targetSumTerms)} = ${polish.targetSum}`);
+    const lp = [
+      'Minimize',
+      ` obj: ${lpExpression(objectiveTerms)}`,
+      'Subject To',
+      ...constraints.map((constraint) => ` ${constraint}`),
+      'Binary',
+      ...binaries.map((name) => ` ${name}`),
+      'End',
+    ].join('\n');
+    return { lp, optionVariables };
+  }
+
+  let highsPromise = null;
+  async function loadHighs() {
+    if (highsPromise) return highsPromise;
+    if (typeof root.importScripts !== 'function' || !root.location) return null;
+    root.importScripts('../assets/vendor/highs/highs.js');
+    if (typeof root.Module !== 'function') return null;
+    highsPromise = root.Module({
+      locateFile: () => new URL('../assets/vendor/highs/highs.wasm', root.location.href).href,
+      print: () => {},
+      printErr: () => {},
+    });
+    return highsPromise;
+  }
+
+  async function polishOptimalCost(problem, incumbent) {
+    const polish = problem.polish;
+    if (!polish || incumbent.status === 'optimal'
+      || incumbent.objective.min !== polish.targetMin
+      || incumbent.objective.sum !== polish.targetSum) return incumbent;
+    const model = buildPolishModel(problem, incumbent);
+    if (!model) return incumbent;
+
+    try {
+      const highs = await loadHighs();
+      if (!highs) return incumbent;
+      const solution = highs.solve(model.lp, {
+        output_flag: false,
+        mip_rel_gap: 0,
+        time_limit: Math.max(0.1, Number(polish.timeLimitSeconds) || 5),
+      });
+      if (!solution || !solution.Columns) return incumbent;
+
+      const choices = [];
+      let cost = 0;
+      let gains = Array(problem.baseRaws.length).fill(0);
+      for (let attrIndex = 0; attrIndex < problem.attrs.length; attrIndex++) {
+        const names = model.optionVariables[attrIndex];
+        let selected = -1;
+        for (let optionIndex = 0; optionIndex < names.length; optionIndex++) {
+          const column = solution.Columns[names[optionIndex]];
+          if (column && column.Primal > 0.5) {
+            if (selected >= 0) return incumbent;
+            selected = optionIndex;
+          }
+        }
+        if (selected < 0) return incumbent;
+        const option = problem.attrs[attrIndex].options[selected];
+        choices[attrIndex] = selected;
+        cost += option.cost;
+        gains = addVectors(gains, option.gains);
+      }
+
+      const state = { cost, gains, choices };
+      const evaluation = evaluate(problem, state);
+      if (cost > problem.budget || cost > incumbent.added
+        || evaluation.min !== polish.targetMin
+        || evaluation.sum !== polish.targetSum) return incumbent;
+      return {
+        feasible: true,
+        added: cost,
+        values: valuesFor(problem, state),
+        overalls: evaluation.overalls,
+        objective: { min: evaluation.min, sum: evaluation.sum },
+        status: solution.Status === 'Optimal' ? 'optimal' : incumbent.status,
+        visited: incumbent.visited,
+        polished: true,
+      };
+    } catch (error) {
+      return incumbent;
+    }
   }
 
   function solve(problem) {
@@ -323,11 +478,12 @@
     };
   }
 
-  root.MultiOverallSolver = { solve };
+  root.MultiOverallSolver = { solve, buildPolishModel, polishOptimalCost };
   if (typeof root.addEventListener === 'function' && typeof root.postMessage === 'function') {
-    root.addEventListener('message', (event) => {
+    root.addEventListener('message', async (event) => {
       try {
-        root.postMessage({ ok: true, result: solve(event.data) });
+        const result = solve(event.data);
+        root.postMessage({ ok: true, result: await polishOptimalCost(event.data, result) });
       } catch (error) {
         root.postMessage({ ok: false, error: error && error.message ? error.message : String(error) });
       }

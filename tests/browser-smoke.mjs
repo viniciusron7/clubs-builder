@@ -95,6 +95,11 @@ assert.ok(loadedFonts.ui > 0);
 assert.ok(loadedFonts.display > 0);
 assert.match(loadedFonts.body, /Cruyff Sans/);
 assert.match(loadedFonts.heading, /Cruyff Sans Condensed/);
+assert.equal(await evaluate(`Number(document.querySelector('.build-summary-attribute-sum').textContent)`), 1947);
+await click('#btn-maxsum');
+assert.equal(await evaluate(`document.querySelectorAll('[data-sum-attr]').length`), 29);
+assert.equal(await evaluate(`document.querySelectorAll('[data-sum-attr="skill_moves"], [data-sum-attr="weak_foot"]').length`), 0);
+await click('[data-modal-close]');
 
 // The LVL field must swallow a whole multi-digit number typed key by key without losing focus.
 await evaluate(`(() => { const el = document.querySelector('#level-input'); el.focus(); el.select(); })()`);
@@ -173,7 +178,7 @@ const creatorOptimizerRegression = await evaluate(`(async () => {
 })()`);
 assert.deepEqual(creatorOptimizerRegression.overalls, { CAM: 94, CM: 95, CDM: 92 });
 assert.deepEqual(creatorOptimizerRegression.objective, { min: 92, sum: 281 });
-assert.equal(creatorOptimizerRegression.spent <= 3167, true);
+assert.equal(creatorOptimizerRegression.spent, 3126);
 assert.equal(creatorOptimizerRegression.status, 'optimal');
 
 const buildBeforePlaystyleUnlock = await evaluate(`JSON.stringify(Share.fromUrl())`);
@@ -279,6 +284,16 @@ assert.match(optimizerToast, /(optimal|best found)/);
 assert.equal(await evaluate(`document.querySelector('#panel .ap-icon').getAttribute('src')`), 'assets/ui/ap.png');
 assert.equal(await evaluate(`document.querySelector('#panel .ap-icon').naturalWidth > 0`), true);
 assert.doesNotMatch(await evaluate(`document.querySelector('#panel').innerText`), /Select an attribute to edit/i);
+const buildSummaryAttributeSum = await evaluate(`Number(document.querySelector('.build-summary-attribute-sum').textContent)`);
+const expectedBuildSummaryAttributeSum = await evaluate(`(() => {
+  const derived = Calc.derive(Share.fromUrl());
+  return derived.categories
+    .filter((category) => derived.arch.position === 'GK' || category.id !== 'goalkeeping')
+    .flatMap((category) => category.attributes)
+    .filter((attribute) => attribute.displayType !== 'stars')
+    .reduce((total, attribute) => total + attribute.currentValue, 0);
+})()`);
+assert.equal(buildSummaryAttributeSum, expectedBuildSummaryAttributeSum);
 await screenshot('/tmp/clubs-builder-desktop.png');
 await click('[data-attr="vision"]');
 assert.equal(await evaluate(`document.querySelector('#panel').dataset.kind`), 'attribute');
@@ -335,6 +350,11 @@ const goalkeeperText = await evaluate(`document.querySelector('#positions-bar').
 assert.match(goalkeeperText, /GK/);
 assert.match(goalkeeperText, /Est\. OVR/i);
 assert.equal(await evaluate(`document.querySelectorAll('[data-pos]:not([data-pos="GK"])').length`), 0);
+assert.equal(await evaluate(`Number(document.querySelector('.build-summary-attribute-sum').textContent)`), 1885);
+await click('#btn-maxsum');
+assert.equal(await evaluate(`document.querySelectorAll('[data-sum-attr]').length`), 34);
+assert.equal(await evaluate(`document.querySelectorAll('[data-sum-attr="skill_moves"], [data-sum-attr="weak_foot"]').length`), 0);
+await click('[data-modal-close]');
 
 await click('[data-modal="specializations"]');
 await click('[data-spec-unlock="spider"]');
