@@ -207,6 +207,15 @@ assert.equal(await evaluate(`document.querySelector('#attributes .key-attribute-
 assert.equal(await evaluate(`getComputedStyle(document.querySelector('#attributes .key-attribute-name')).color`), 'rgb(7, 244, 104)');
 assert.equal(await evaluate(`document.querySelector('[data-attr="skill_moves"] .key-attribute-icon')`), null);
 assert.equal(await evaluate(`document.querySelector('[data-attr="weak_foot"] .key-attribute-icon')`), null);
+assert.equal(await evaluate(`document.querySelectorAll('#attributes .category-overall').length`), 6);
+assert.equal(await evaluate(`(() => {
+  const derived = Calc.derive(Share.fromUrl());
+  return [...document.querySelectorAll('#attributes [data-category]')].every((card) => {
+    const expected = derived.categoryOveralls[card.dataset.category];
+    const badge = card.querySelector('.category-overall strong');
+    return expected == null ? !badge : Number(badge.textContent) === expected;
+  });
+})()`), true);
 assert.equal(await evaluate(`(() => {
   const pace = document.querySelector('[data-category="pace"]').getBoundingClientRect();
   const physical = document.querySelector('[data-category="physical"]').getBoundingClientRect();
@@ -519,6 +528,7 @@ await send('Page.addScriptToEvaluateOnNewDocument', {
           authorName: payload.authorName,
           buildName: payload.buildName,
           buildCode: payload.buildCode,
+          card: payload.card,
           createdAt: '2026-07-29T12:00:00.000Z',
         };
         window.__communityMock.posts++;
@@ -553,6 +563,7 @@ await waitFor(`document.readyState === 'complete' && !!window.Community && docum
 errors.length = 0;
 await click('#btn-community-builds');
 await waitFor(`document.querySelectorAll('.community-card').length === 1`);
+assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card').length`), 1);
 assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Creator control/);
 assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Alex/);
 assert.equal(await evaluate(`document.querySelectorAll('.community-card [data-community-delete]').length`), 0);
@@ -571,6 +582,12 @@ await click('[data-modal-close]');
 await click('#btn-publish-build');
 assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'community');
 assert.equal(await evaluate(`!!document.querySelector('#community-publish-form')`), true);
+await waitFor(`document.querySelector('.community-publish-preview .fc-card') && document.querySelector('#community-athlete-name').value.length > 0`);
+assert.equal(await evaluate(`!!document.querySelector('[data-community-athlete-picker-toggle]')`), true);
+await click('[data-community-athlete-picker-toggle]');
+await waitFor(`document.querySelectorAll('[data-community-athlete]').length > 0`);
+assert.equal(await evaluate(`!!document.querySelector('#community-athlete-search')`), true);
+await click('[data-community-athlete-picker-close]');
 await waitFor(`document.querySelector('#community-publish-submit') && !document.querySelector('#community-publish-submit').disabled`);
 await evaluate(`(() => {
   const author = document.querySelector('#community-author');
@@ -580,12 +597,16 @@ await evaluate(`(() => {
   author.dispatchEvent(new Event('input', { bubbles: true }));
   name.dispatchEvent(new Event('input', { bubbles: true }));
 })()`);
+await screenshot('/tmp/clubs-builder-community-publisher.png');
 await click('#community-publish-submit');
 await waitFor(`window.__communityMock.posts === 1 && document.querySelectorAll('.community-card').length === 2`);
 assert.equal(await evaluate(`Community.getSavedAuthor()`), 'Vinicius');
 assert.equal(await evaluate(`document.querySelectorAll('[data-community-delete]').length`), 1);
+assert.equal(await evaluate(`window.__communityMock.items[0].card.athleteName.length <= 15`), true);
+assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card').length`), 2);
 await click('[data-community-publish-toggle]');
-assert.equal(await evaluate(`document.querySelector('#community-author').value`), 'Vinicius');
+assert.equal(await evaluate(`document.querySelector('#community-author')`), null);
+assert.match(await evaluate(`document.querySelector('.community-saved-author').innerText`), /Vinicius/);
 await click('[data-community-publish-cancel]');
 await screenshot('/tmp/clubs-builder-community-desktop.png');
 await evaluate(`window.confirm = () => true`);
@@ -611,6 +632,23 @@ const communityMobileLayout = await evaluate(`(() => {
 assert.equal(communityMobileLayout.pageScrollWidth <= communityMobileLayout.viewportWidth, true);
 assert.equal(communityMobileLayout.modalScrollWidth <= communityMobileLayout.modalClientWidth, true);
 await screenshot('/tmp/clubs-builder-community-mobile.png');
+await click('[data-community-publish-toggle]');
+await waitFor(`document.querySelector('.community-publish-preview .fc-card') && document.querySelector('#community-publish-form')`);
+const communityMobilePublisherLayout = await evaluate(`(() => {
+  const modal = document.querySelector('#modal-box');
+  const form = document.querySelector('#community-publish-form');
+  return {
+    modalClientWidth: modal.clientWidth,
+    modalScrollWidth: modal.scrollWidth,
+    formClientWidth: form.clientWidth,
+    formScrollWidth: form.scrollWidth,
+    authorHidden: !document.querySelector('#community-author'),
+  };
+})()`);
+assert.equal(communityMobilePublisherLayout.modalScrollWidth <= communityMobilePublisherLayout.modalClientWidth, true);
+assert.equal(communityMobilePublisherLayout.formScrollWidth <= communityMobilePublisherLayout.formClientWidth, true);
+assert.equal(communityMobilePublisherLayout.authorHidden, true);
+await screenshot('/tmp/clubs-builder-community-mobile-publisher.png');
 
 const relevantErrors = errors.filter((error) => !/favicon/i.test(error));
 assert.deepEqual(relevantErrors, []);
@@ -627,7 +665,8 @@ console.log(JSON.stringify({
   mobilePlaystylesLayout,
   communityDesktopLayout,
   communityMobileLayout,
-  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-mobile-playstyles.png', '/tmp/clubs-builder-community-desktop.png', '/tmp/clubs-builder-community-mobile.png'],
+  communityMobilePublisherLayout,
+  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-mobile-playstyles.png', '/tmp/clubs-builder-community-publisher.png', '/tmp/clubs-builder-community-desktop.png', '/tmp/clubs-builder-community-mobile.png', '/tmp/clubs-builder-community-mobile-publisher.png'],
 }, null, 2));
 
 socket.close();

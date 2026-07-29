@@ -1,7 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { BuildCodeError, sanitizeBuildCode } from "./build-code.ts";
+import {
+  type CardMetadata,
+  CardMetadataError,
+  sanitizeCardMetadata,
+} from "./card-metadata.ts";
 
-const PUBLIC_COLUMNS = "id,author_name,build_name,build_code,created_at";
+const PUBLIC_COLUMNS =
+  "id,author_name,build_name,build_code,athlete_name,ut_player_id,ut_player_ea_id,athlete_image_path,card_rarity_id,league_id,club_id,nation_id,created_at";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TIMESTAMP_PATTERN =
@@ -14,6 +20,14 @@ type PublicRow = {
   author_name: string;
   build_name: string;
   build_code: string;
+  athlete_name: string | null;
+  ut_player_id: number | string | null;
+  ut_player_ea_id: number | string | null;
+  athlete_image_path: string | null;
+  card_rarity_id: string | null;
+  league_id: string | null;
+  club_id: string | null;
+  nation_id: string | null;
   created_at: string;
 };
 
@@ -22,6 +36,7 @@ type PublicBuild = {
   authorName: string;
   buildName: string;
   buildCode: string;
+  card: CardMetadata | null;
   createdAt: string;
 };
 
@@ -113,6 +128,11 @@ function errorResponse(request: Request, error: unknown): Response {
       error: { code: "invalid_build_code", message: error.message },
     }, 400);
   }
+  if (error instanceof CardMetadataError) {
+    return json(request, {
+      error: { code: "invalid_card_metadata", message: error.message },
+    }, 400);
+  }
   if (error instanceof ApiError) {
     // Configuration details are logged but not exposed to public callers.
     if (error.status >= 500) {
@@ -162,12 +182,42 @@ function serviceClient(): SupabaseClient {
   });
 }
 
+function publicCard(row: PublicRow): CardMetadata | null {
+  const values = [
+    row.athlete_name,
+    row.ut_player_id,
+    row.ut_player_ea_id,
+    row.athlete_image_path,
+    row.card_rarity_id,
+    row.league_id,
+    row.club_id,
+    row.nation_id,
+  ];
+  if (values.every((value) => value === null)) return null;
+  if (values.some((value) => value === null)) {
+    console.error(`[community-builds] incomplete card metadata for ${row.id}`);
+    return null;
+  }
+  return {
+    version: 1,
+    athleteName: row.athlete_name as string,
+    utPlayerId: Number(row.ut_player_id),
+    utPlayerEaId: Number(row.ut_player_ea_id),
+    athleteImagePath: row.athlete_image_path as string,
+    rarityId: row.card_rarity_id as string,
+    leagueId: row.league_id as string,
+    clubId: row.club_id as string,
+    nationId: row.nation_id as string,
+  };
+}
+
 function publicBuild(row: PublicRow): PublicBuild {
   return {
     id: row.id,
     authorName: row.author_name,
     buildName: row.build_name,
     buildCode: row.build_code,
+    card: publicCard(row),
     createdAt: row.created_at,
   };
 }
@@ -271,6 +321,30 @@ function sanitizeText(
       400,
       "invalid_input",
       `${label} must contain between ${minLength} and ${maxLength} characters.`,
+    );
+  }
+  return sanitized;
+}
+
+function sanitizeOptionalText(
+  value: unknown,
+  label: string,
+  maxLength: number,
+): string {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value !== "string") {
+    throw new ApiError(400, "invalid_input", `${label} must be text.`);
+  }
+  const sanitized = value
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069<>]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (Array.from(sanitized).length > maxLength) {
+    throw new ApiError(
+      400,
+      "invalid_input",
+      `${label} must contain at most ${maxLength} characters.`,
     );
   }
   return sanitized;
@@ -508,7 +582,20 @@ async function consumeRateLimit(
 async function publishBuild(request: Request): Promise<Response> {
   const body = await readJsonBody(request);
   const authorName = sanitizeText(body.authorName, "authorName", 2, 32);
-  const buildName = sanitizeText(body.buildName, "buildName", 2, 60);
+  const card = sanitizeCardMetadata(body.card);
+  const requestedBuildName = sanitizeOptionalText(
+    body.buildName,
+    "buildName",
+    60,
+  );
+  const buildName = requestedBuildName || card?.athleteName;
+  if (!buildName) {
+    throw new ApiError(
+      400,
+      "invalid_input",
+      "buildName is required when card metadata is not provided.",
+    );
+  }
   const build = sanitizeBuildCode(body.buildCode);
   const ip = requestIp(request);
   const rateLimitSecret = env("COMMUNITY_RATE_LIMIT_SECRET");
@@ -571,6 +658,14 @@ async function publishBuild(request: Request): Promise<Response> {
       positions: build.positions,
       level: build.level,
       management_token_hash: managementTokenHash,
+      athlete_name: card?.athleteName ?? null,
+      ut_player_id: card?.utPlayerId ?? null,
+      ut_player_ea_id: card?.utPlayerEaId ?? null,
+      athlete_image_path: card?.athleteImagePath ?? null,
+      card_rarity_id: card?.rarityId ?? null,
+      league_id: card?.leagueId ?? null,
+      club_id: card?.clubId ?? null,
+      nation_id: card?.nationId ?? null,
     })
     .select(PUBLIC_COLUMNS)
     .single();

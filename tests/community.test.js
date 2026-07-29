@@ -5,6 +5,17 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const rootDir = path.resolve(__dirname, '..');
+const sampleCard = () => ({
+  version: 1,
+  athleteName: 'Laporte',
+  utPlayerId: '141787',
+  utPlayerEaId: '84098298',
+  athleteImagePath: '2026/player-item/26-84098298.sample.webp',
+  rarityId: '107',
+  leagueId: '53',
+  clubId: '448',
+  nationId: '45',
+});
 
 function response(status, body) {
   return {
@@ -142,6 +153,7 @@ test('publish validates, posts JSON, and saves author and management token', asy
     authorName: '  John   Smith ',
     buildName: '  Creator   CAM ',
     buildCode: 'encoded-build',
+    card: sampleCard(),
     turnstileToken: 'verified-token',
   });
   assert.equal(result.build.id, 'build-42');
@@ -153,6 +165,7 @@ test('publish validates, posts JSON, and saves author and management token', asy
     authorName: 'John Smith',
     buildName: 'Creator CAM',
     buildCode: 'encoded-build',
+    card: sampleCard(),
     turnstileToken: 'verified-token',
   });
   assert.equal(context.Community.getSavedAuthor(), 'John Smith');
@@ -167,9 +180,53 @@ test('publish validates, posts JSON, and saves author and management token', asy
       authorName: 'A',
       buildName: 'Build',
       buildCode: 'encoded-build',
+      card: sampleCard(),
       turnstileToken: 'verified-token',
     }),
     (error) => error.code === 'INVALID_AUTHOR_NAME',
+  );
+});
+
+test('publish falls back to the athlete name and rejects invalid card identity', async () => {
+  let posted = null;
+  const context = createContext({
+    fetch: async (url, options) => {
+      posted = JSON.parse(options.body);
+      return response(201, {
+        build: { id: 'fallback-build', buildName: posted.buildName, card: posted.card },
+        manageToken: 'z'.repeat(43),
+      });
+    },
+  });
+  await context.Community.publish({
+    authorName: 'Friend',
+    buildName: '   ',
+    buildCode: 'encoded-build',
+    card: sampleCard(),
+    turnstileToken: 'verified-token',
+  });
+  assert.equal(posted.buildName, 'Laporte');
+  assert.equal(posted.card.utPlayerId, '141787');
+
+  await assert.rejects(
+    context.Community.publish({
+      authorName: 'Friend',
+      buildName: '',
+      buildCode: 'encoded-build',
+      card: { ...sampleCard(), athleteName: 'One Two Three Four' },
+      turnstileToken: 'verified-token',
+    }),
+    (error) => error.code === 'INVALID_ATHLETE_NAME',
+  );
+  await assert.rejects(
+    context.Community.publish({
+      authorName: 'Friend',
+      buildName: '',
+      buildCode: 'encoded-build',
+      card: { ...sampleCard(), leagueId: 'not-an-id' },
+      turnstileToken: 'verified-token',
+    }),
+    (error) => error.code === 'INVALID_CARD_IDENTITY',
   );
 });
 
@@ -185,6 +242,7 @@ test('storage denial never turns a successful publication into an API failure', 
     authorName: 'Friend',
     buildName: 'Build',
     buildCode: 'code',
+    card: sampleCard(),
     turnstileToken: 'token',
   });
   assert.equal(result.build.id, 'build-1');
@@ -210,6 +268,7 @@ test('remove requires a local token, sends it only as Bearer, then forgets it', 
     authorName: 'Friend',
     buildName: 'Build',
     buildCode: 'code',
+    card: sampleCard(),
     turnstileToken: 'token',
   });
   const result = await context.Community.remove('build/42');

@@ -47,6 +47,97 @@ test('attribute bar colors follow the four configured value ranges', () => {
   assert.equal(Calc.barColor(99), '#07F468');
 });
 
+test('category OVR formulas use the discovered weights and half-up rounding', () => {
+  const { Calc } = createContext();
+  const values = {
+    acceleration: 80,
+    sprint_speed: 50,
+    att_position: 81,
+    finishing: 86,
+    shot_power: 77,
+    long_shots: 72,
+    volleys: 68,
+    penalties: 64,
+    vision: 88,
+    crossing: 73,
+    fk_accuracy: 69,
+    short_passing: 91,
+    long_passing: 84,
+    curve: 76,
+    agility: 79,
+    balance: 74,
+    reactions: 90,
+    ball_control: 87,
+    dribbling: 83,
+    composure: 78,
+    interceptions: 82,
+    heading_accuracy: 71,
+    def_aware: 85,
+    standing_tackle: 88,
+    sliding_tackle: 77,
+    jumping: 75,
+    strength: 84,
+    stamina: 89,
+    aggression: 80,
+  };
+  assert.deepEqual(
+    { ...Calc.categoryOverallMap(values) },
+    {
+      pace: 64,
+      scoring: 79,
+      passing: 84,
+      ball_control: 83,
+      defending: 83,
+      physical: 84,
+    },
+  );
+  assert.equal(Calc.categoryOverall('pace', values), 64);
+  assert.equal(Calc.categoryOverall('goalkeeping', values), null);
+  assert.equal(Calc.categoryOverall('other', values), null);
+});
+
+test('derived category OVRs use body-adjusted effective attribute values', () => {
+  const { Calc } = createContext();
+  const standard = Calc.derive(defaultBuild({
+    archetypeId: 'fwd_finisher',
+    height: 180,
+    weight: 75,
+  }));
+  assert.deepEqual(
+    { ...standard.categoryOveralls },
+    {
+      pace: 73,
+      scoring: 72,
+      passing: 63,
+      ball_control: 72,
+      defending: 55,
+      physical: 68,
+    },
+  );
+  assert.deepEqual(
+    { ...standard.categoryOveralls },
+    { ...Calc.categoryOverallMap(standard.effective) },
+  );
+
+  const changedBody = Calc.derive(defaultBuild({
+    archetypeId: 'fwd_finisher',
+    height: 200,
+    weight: 100,
+  }));
+  assert.deepEqual(
+    { ...changedBody.categoryOveralls },
+    {
+      pace: 70,
+      scoring: 72,
+      passing: 63,
+      ball_control: 71,
+      defending: 55,
+      physical: 72,
+    },
+  );
+  assert.notDeepEqual(changedBody.categoryOveralls, standard.categoryOveralls);
+});
+
 test('position order and body do not change estimated OVR', () => {
   const { Calc } = createContext();
   const base = defaultBuild({ positions: ['ST', 'CAM'], attributes: { finishing: 92, reactions: 90, short_passing: 88 } });

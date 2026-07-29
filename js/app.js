@@ -5,7 +5,7 @@
  * Depends on window.DATA, window.Calc, and window.Share.
  * ========================================================================== */
 (function () {
-  const D = window.DATA, C = window.Calc, S = window.Share, L = window.DATA.labels;
+  const D = window.DATA, C = window.Calc, S = window.Share, BC = window.BuildCard, L = window.DATA.labels;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -23,12 +23,16 @@
     showWeights: false,
     optimizing: false, optimizeRunId: 0, optimizeController: null,
     psPicker: false,
-    utPlayers: null, utLoading: false, utError: null, utQuery: '',
+    utPlayers: null, utCatalog: null, utLoading: false, utError: null, utQuery: '',
     utPositions: [], utOnlyBuildable: true, utPlanCache: null,
     communityItems: [], communityLoaded: false, communityLoading: false, communityLoadingMore: false,
     communityError: null, communityNextCursor: null, communityQuery: '', communityPosition: 'all',
     communityPublishOpen: false, communityPublishing: false, communityPublishError: null,
-    communityAuthor: '', communityBuildName: '', communityTurnstileToken: '', communityTurnstileError: null,
+    communityAuthor: '', communityAuthorCached: false, communityBuildName: '',
+    communityAthleteId: '', communityAthleteName: '', communityRarityId: '',
+    communityLeagueId: '', communityClubId: '', communityNationId: '',
+    communityAthletePickerOpen: false, communityAthleteQuery: '', communityAthletePositions: [],
+    communityAutoMatchKey: '', communityTurnstileToken: '', communityTurnstileError: null,
     communityRemovingId: null, communityRequestId: 0, communityController: null, communityPublishController: null,
   };
   const OUTFIELD_POSITIONS = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
@@ -296,6 +300,14 @@
   function currentAttributeSum(d) {
     return numericVisibleAttributes(d).reduce((total, attr) => total + attr.currentValue, 0);
   }
+  const categoryOverallLabel = Object.freeze({
+    pace: 'PAC',
+    scoring: 'SHO',
+    passing: 'PAS',
+    ball_control: 'DRI',
+    defending: 'DEF',
+    physical: 'PHY',
+  });
   function renderAttributes(d) {
     if (!d.arch) {
       $('#attributes').innerHTML = `<div class="col-span-full bg-app-panel rounded-xl border border-b-primary p-10 text-center text-t-muted">Select an archetype above to start building.</div>`;
@@ -308,7 +320,12 @@
       <section class="attribute-card bg-app-panel rounded-xl border border-b-primary overflow-hidden self-start" data-category="${esc(cat.id)}" aria-labelledby="attribute-category-${esc(cat.id)}">
         <header class="attribute-card-head w-full p-4 flex items-center justify-between min-h-[52px]">
           <h2 id="attribute-category-${esc(cat.id)}" class="text-base font-bold text-t-secondary tracking-wide">${esc(catName(cat.id))}</h2>
-          ${weightProfile ? '<span class="attr-weight-label">OVR weight</span>' : ''}
+          <span class="attribute-card-head-meta">
+            ${d.categoryOveralls && d.categoryOveralls[cat.id] != null
+              ? `<span class="category-overall" title="${esc(catName(cat.id))} category overall"><small>${categoryOverallLabel[cat.id]}</small><strong>${d.categoryOveralls[cat.id]}</strong></span>`
+              : ''}
+            ${weightProfile ? '<span class="attr-weight-label">Weight</span>' : ''}
+          </span>
         </header>
         <div class="attribute-card-body px-3 pb-3 space-y-1.5">${cat.attributes.map((a) => attributeRow(a, d, weightProfile)).join('')}</div>
       </section>`).join('');
@@ -517,6 +534,242 @@
     try { return !!(api && api.isConfigured()); } catch (e) { return false; }
   };
   const communityPositionOptions = ['all', 'GK'].concat(OUTFIELD_POSITIONS);
+  const CARD_ATTRIBUTE_GROUPS = Object.freeze([
+    ['acceleration', 'sprint_speed'],
+    ['att_position', 'finishing', 'shot_power', 'long_shots', 'volleys', 'penalties'],
+    ['vision', 'crossing', 'fk_accuracy', 'short_passing', 'long_passing', 'curve'],
+    ['agility', 'balance', 'reactions', 'ball_control', 'dribbling', 'composure'],
+    ['interceptions', 'heading_accuracy', 'def_aware', 'standing_tackle', 'sliding_tackle'],
+    ['jumping', 'strength', 'stamina', 'aggression'],
+  ]);
+
+  function catalogItems(collection) {
+    return BC && BC.catalogItems ? BC.catalogItems(ui.utCatalog, collection) : [];
+  }
+
+  function catalogId(item) {
+    return String((item && (item.id ?? item.value ?? item.slug)) ?? '');
+  }
+
+  function catalogName(item) {
+    return String(item && (item.name || item.label || item.displayName) || '');
+  }
+
+  function catalogOptionId(collection, requested, matcher) {
+    const items = catalogItems(collection);
+    const requestedId = String(requested == null ? '' : requested);
+    const exact = items.find((item) => catalogId(item) === requestedId);
+    if (exact) return catalogId(exact);
+    const matched = matcher && items.find((item) => matcher(catalogName(item).toLowerCase()));
+    return matched ? catalogId(matched) : (items[0] ? catalogId(items[0]) : '');
+  }
+
+  function clubLeagueId(club) {
+    return String((club && (club.leagueId ?? club.league_id ?? (club.league && club.league.id))) ?? '');
+  }
+
+  function publishableLeagues() {
+    const leagueIds = new Set(catalogItems('clubs').map(clubLeagueId).filter(Boolean));
+    return catalogItems('leagues').filter((league) => leagueIds.has(catalogId(league)));
+  }
+
+  function communityPlayerById(id) {
+    return (ui.utPlayers || []).find((player) => String(player.id) === String(id)) || null;
+  }
+
+  function currentCommunityInfo() {
+    const normalized = C.normalizeBuild(build).build;
+    const derived = C.derive(normalized);
+    return {
+      build: normalized,
+      derived,
+      positions: normalized.positions || [],
+      overalls: C.overallMapForValues(normalized.positions || [], derived, null),
+      archName: derived.arch ? archName(derived.arch.id) : '',
+      openUrl: S.toUrl(normalized),
+    };
+  }
+
+  function communityPlaystyles(info) {
+    if (!info || !info.derived) return [];
+    const result = [];
+    const seen = new Set();
+    C.signatureSlots(info.build, info.derived.categories).forEach((slot) => {
+      if (!slot.playStyleId || seen.has(slot.playStyleId)) return;
+      seen.add(slot.playStyleId);
+      result.push({
+        id: slot.playStyleId,
+        name: psName(slot.playStyleId),
+        plus: !!slot.isPlus,
+        icon: `playstyles/${slot.isPlus ? 'plus/' : ''}${psIcon(slot.playStyleId)}`,
+      });
+    });
+    (info.build.playstyles || []).forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      result.push({ id, name: psName(id), plus: false, icon: `playstyles/${psIcon(id)}` });
+    });
+    return result;
+  }
+
+  function playerPositionScore(player, selected) {
+    if (!selected.length) return 0;
+    const playerPositions = Array.isArray(player.positions) ? player.positions : [];
+    const covered = selected.filter((position) => playerPositions.includes(position)).length;
+    const missing = selected.length - covered;
+    const extras = playerPositions.filter((position) => !selected.includes(position)).length;
+    return .8 * (missing / selected.length) + .2 * (extras / Math.max(1, playerPositions.length));
+  }
+
+  function playerAttributeScore(player, d) {
+    const attributes = player.attributes || {};
+    const categoryDistances = CARD_ATTRIBUTE_GROUPS.map((ids) => {
+      const differences = ids
+        .filter((id) => Number.isFinite(+attributes[id]) && Number.isFinite(+d.effective[id]))
+        .map((id) => ((+attributes[id] - +d.effective[id]) / 98) ** 2);
+      if (!differences.length) return 1;
+      return Math.sqrt(differences.reduce((sum, value) => sum + value, 0) / differences.length);
+    });
+    return categoryDistances.reduce((sum, value) => sum + value, 0) / categoryDistances.length;
+  }
+
+  function closestCommunityAthlete(info) {
+    if (!info || !info.derived || !info.derived.arch) return null;
+    const isGoalkeeper = info.derived.arch.position === 'GK';
+    const selected = info.positions || [];
+    let candidates = (ui.utPlayers || []).filter((player) => {
+      const positions = Array.isArray(player.positions) ? player.positions : [];
+      return isGoalkeeper ? positions.includes('GK') : positions.some((position) => OUTFIELD_POSITIONS.includes(position));
+    });
+    if (selected.length) {
+      const overlapping = candidates.filter((player) => player.positions.some((position) => selected.includes(position)));
+      if (overlapping.length) candidates = overlapping;
+    }
+    let best = null;
+    candidates.forEach((player) => {
+      const positionScore = playerPositionScore(player, selected);
+      const attrs = player.attributes || {};
+      const skillDistance = Math.abs((+attrs.skill_moves || 1) - (+info.derived.effective.skill_moves || 1)) / 3;
+      const weakFootDistance = Math.abs((+attrs.weak_foot || 1) - (+info.derived.effective.weak_foot || 1)) / 3;
+      const starDistance = Math.min(1, (skillDistance + weakFootDistance) / 2);
+      const heightGap = Number.isFinite(+player.height) ? Math.abs(info.build.height - +player.height) : 30;
+      const weightGap = Number.isFinite(+player.weight) ? Math.abs(info.build.weight - +player.weight) : 35;
+      const score = .62 * playerAttributeScore(player, info.derived)
+        + .18 * positionScore
+        + .08 * starDistance
+        + .06 * Math.min(1, heightGap / 30)
+        + .06 * Math.min(1, weightGap / 35);
+      const overlap = selected.filter((position) => player.positions.includes(position)).length;
+      const bodyGap = heightGap + weightGap;
+      if (!best
+        || score < best.score
+        || (score === best.score && overlap > best.overlap)
+        || (score === best.score && overlap === best.overlap && bodyGap < best.bodyGap)
+        || (score === best.score && overlap === best.overlap && bodyGap === best.bodyGap && +player.id < +best.player.id)) {
+        best = { player, score, overlap, bodyGap };
+      }
+    });
+    return best && best.player || null;
+  }
+
+  function setCommunityAthlete(player, resetIdentity = true) {
+    if (!player) return false;
+    ui.communityAthleteId = String(player.id);
+    ui.communityAthleteName = BC.safeCardName(player.cardName || player.name);
+    if (resetIdentity) {
+      ui.communityRarityId = catalogOptionId('rarities', player.rarityId, (name) => name.includes('gold'));
+      const leagues = publishableLeagues();
+      const requestedLeague = leagues.find((league) => catalogId(league) === String(player.leagueId));
+      ui.communityLeagueId = requestedLeague ? catalogId(requestedLeague) : (leagues[0] ? catalogId(leagues[0]) : '');
+      const validClubs = catalogItems('clubs').filter((club) => clubLeagueId(club) === ui.communityLeagueId);
+      const requestedClub = validClubs.find((club) => catalogId(club) === String(player.clubId));
+      ui.communityClubId = requestedClub ? catalogId(requestedClub) : (validClubs[0] ? catalogId(validClubs[0]) : '');
+      ui.communityNationId = catalogOptionId('nations', player.nationId);
+    }
+    return true;
+  }
+
+  function communityDraftMetadata() {
+    const player = communityPlayerById(ui.communityAthleteId);
+    return {
+      version: 1,
+      athleteName: BC.safeCardName(ui.communityAthleteName || (player && (player.cardName || player.name))),
+      utPlayerId: player ? String(player.id) : String(ui.communityAthleteId || ''),
+      utPlayerEaId: player ? String(player.eaId) : '',
+      athleteImagePath: player && (player.playerImagePath || player.cardImagePath) || '',
+      rarityId: String(ui.communityRarityId || ''),
+      leagueId: String(ui.communityLeagueId || ''),
+      clubId: String(ui.communityClubId || ''),
+      nationId: String(ui.communityNationId || ''),
+    };
+  }
+
+  function ensureCommunityCardDraft() {
+    const info = currentCommunityInfo();
+    const key = build.archetypeId ? S.encode(build) : '';
+    if (ui.utPlayers && ui.utCatalog && key && ui.communityAutoMatchKey !== key) {
+      setCommunityAthlete(closestCommunityAthlete(info));
+      ui.communityAutoMatchKey = key;
+    } else if (!ui.utPlayers || !ui.utCatalog) {
+      void ensureUtPlayers();
+    }
+    return info;
+  }
+
+  function catalogOptions(collection, selected, items = null) {
+    const values = (items || catalogItems(collection)).slice().sort((a, b) =>
+      catalogName(a).localeCompare(catalogName(b), 'en', { sensitivity: 'base' }));
+    return values.map((item) => {
+      const id = catalogId(item);
+      return `<option value="${esc(id)}" ${String(selected) === id ? 'selected' : ''}>${esc(catalogName(item) || id)}</option>`;
+    }).join('');
+  }
+
+  function communityAthletePicker(info) {
+    if (!ui.communityAthletePickerOpen) return '';
+    if (ui.utLoading) return '<div class="community-athlete-picker is-loading">Loading athlete images…</div>';
+    if (ui.utError) return `<div class="community-athlete-picker is-error">Athletes could not be loaded: ${esc(ui.utError)}</div>`;
+    const allowed = info.derived.arch && info.derived.arch.position === 'GK' ? ['GK'] : OUTFIELD_POSITIONS;
+    const picked = ui.communityAthletePositions.filter((position) => allowed.includes(position));
+    const query = ui.communityAthleteQuery.trim().toLowerCase();
+    const rows = (ui.utPlayers || []).filter((player) => {
+      if (!player.positions.some((position) => allowed.includes(position))) return false;
+      if (picked.length && !player.positions.some((position) => picked.includes(position))) return false;
+      if (!query) return true;
+      return `${player.cardName || ''} ${player.name || ''} ${player.positions.join(' ')} ${player.overall}`
+        .toLowerCase().includes(query);
+    });
+    const shown = rows.slice(0, UT_RENDER_LIMIT);
+    const chips = [`<button type="button" data-community-athlete-position="all" aria-pressed="${!picked.length}" class="ut-chip ${picked.length ? '' : 'is-on'}">All</button>`]
+      .concat(allowed.map((position) => `<button type="button" data-community-athlete-position="${position}" aria-pressed="${picked.includes(position)}" class="ut-chip ${picked.includes(position) ? 'is-on' : ''}">${position}</button>`))
+      .join('');
+    return `
+      <section class="community-athlete-picker" aria-label="Choose card athlete">
+        <header>
+          <div>
+            <span class="community-eyebrow">Athlete image</span>
+            <h4>Choose an athlete</h4>
+          </div>
+          <button type="button" data-community-athlete-picker-close aria-label="Close athlete picker">✕</button>
+        </header>
+        <div class="community-athlete-toolbar">
+          <div class="ut-chips">${chips}</div>
+          <input id="community-athlete-search" type="search" value="${esc(ui.communityAthleteQuery)}" placeholder="Search athlete, position or OVR" />
+        </div>
+        <div class="community-athlete-list">
+          ${shown.map((player) => {
+            const selected = String(player.id) === String(ui.communityAthleteId);
+            const image = BC.assetUrl(player.playerImagePath || player.cardImagePath);
+            return `<button type="button" data-community-athlete="${esc(player.id)}" aria-pressed="${selected}" class="${selected ? 'is-selected' : ''}">
+              <span class="community-athlete-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" />` : ''}</span>
+              <strong>${esc(player.cardName || player.name)}</strong>
+              <small>${esc(player.positions.join(' / '))} · ${player.overall}</small>
+            </button>`;
+          }).join('')}
+        </div>
+        ${rows.length > shown.length ? `<p>Showing ${shown.length} of ${rows.length}. Use search or a position filter to narrow the list.</p>` : ''}
+      </section>`;
+  }
 
   function communityDate(value) {
     const date = new Date(value);
@@ -552,34 +805,44 @@
     let canDelete = false;
     try { canDelete = !!(api && api.getManageToken(item.id)); } catch (e) {}
     const deleting = ui.communityRemovingId === item.id;
+    const fallbackMetadata = {
+      athleteName: BC.safeCardName(item.buildName || info.archName),
+      rarityId: catalogOptionId('rarities', '', (name) => name.includes('gold')),
+      leagueId: catalogOptionId('leagues', ''),
+      clubId: '',
+      nationId: catalogOptionId('nations', ''),
+    };
+    const metadata = item.card || fallbackMetadata;
+    const normalizedCard = BC.normalizedMetadata(metadata);
+    const rarity = BC.catalogItem(ui.utCatalog, 'rarities', normalizedCard.rarityId);
+    const league = BC.catalogItem(ui.utCatalog, 'leagues', normalizedCard.leagueId);
+    const club = BC.catalogItem(ui.utCatalog, 'clubs', normalizedCard.clubId);
+    const nation = BC.catalogItem(ui.utCatalog, 'nations', normalizedCard.nationId);
+    const searchText = [
+      item.buildName, item.authorName, normalizedCard.athleteName, info.archName, info.positions.join(' '),
+      catalogName(rarity), catalogName(league), catalogName(club), catalogName(nation),
+    ].filter(Boolean).join(' ').toLowerCase();
     const positionSummary = info.positions.length
       ? info.positions.map((position) => `<span><strong>${esc(position)}</strong>${overallsValue(info.overalls, position)}</span>`).join('')
       : '<span class="is-muted">No position set</span>';
-    const searchText = [
-      item.buildName, item.authorName, info.archName, info.positions.join(' '),
-    ].filter(Boolean).join(' ').toLowerCase();
     return `
       <article class="community-card" data-community-search-text="${esc(searchText)}" data-community-card-position="${esc(info.positions.join(' '))}">
-        <header class="community-card-head">
-          <span class="community-arch-icon" aria-hidden="true">
-            <img src="archetypes/${esc(info.derived.arch.iconFileName)}" alt="" />
-          </span>
-          <div class="community-card-title">
-            <h3>${esc(item.buildName || 'Untitled build')}</h3>
-            <p>by <strong>${esc(item.authorName || 'Anonymous')}</strong></p>
+        <div class="community-card-visual">
+          ${BC.render({
+            info,
+            metadata,
+            catalog: ui.utCatalog,
+            playstyles: communityPlaystyles(info),
+          })}
+        </div>
+        <div class="community-card-caption">
+          <div>
+            <h3>${esc(item.buildName || normalizedCard.athleteName || 'Untitled build')}</h3>
+            <p>by <strong>${esc(item.authorName || 'Anonymous')}</strong> · <time datetime="${esc(item.createdAt || '')}">${esc(communityDate(item.createdAt))}</time></p>
           </div>
-          <span class="community-level"><small>LVL</small>${info.build.level}</span>
-        </header>
-        <div class="community-card-identity">
-          <span>${esc(info.archName)}</span>
-          <time datetime="${esc(item.createdAt || '')}">${esc(communityDate(item.createdAt))}</time>
+          <span><small>LVL</small>${info.build.level}</span>
         </div>
-        <div class="community-overalls" aria-label="Estimated overalls">${positionSummary}</div>
-        <div class="community-card-meta">
-          <span><small>AP used</small><strong>${info.derived.ap.spent}</strong></span>
-          <span><small>AP left</small><strong class="${info.derived.ap.available < 0 ? 'is-negative' : ''}">${info.derived.ap.available}</strong></span>
-          <span><small>Body</small><strong>${info.build.height} / ${info.build.weight}</strong></span>
-        </div>
+        <div class="community-overalls" aria-label="Position overalls">${positionSummary}</div>
         <footer class="community-card-actions">
           <a href="${esc(info.openUrl)}" target="_blank" rel="noopener noreferrer" class="community-open">Open build <span aria-hidden="true">↗</span></a>
           <button type="button" data-community-copy="${esc(item.id)}">Copy link</button>
@@ -598,9 +861,15 @@
     const position = ui.communityPosition;
     if (position !== 'all' && !info.positions.includes(position)) return false;
     if (!query) return true;
+    const card = BC.normalizedMetadata(item.card || {});
     return [
-      item.buildName, item.authorName, info.archName, info.positions.join(' '),
+      item.buildName, item.authorName, card.athleteName, info.archName, info.positions.join(' '),
+      catalogName(BC.catalogItem(ui.utCatalog, 'rarities', card.rarityId)),
+      catalogName(BC.catalogItem(ui.utCatalog, 'leagues', card.leagueId)),
+      catalogName(BC.catalogItem(ui.utCatalog, 'clubs', card.clubId)),
+      catalogName(BC.catalogItem(ui.utCatalog, 'nations', card.nationId)),
       ...Object.values(info.overalls || {}).map(String),
+      ...Object.values(info.derived.categoryOveralls || {}).map(String),
     ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
   }
 
@@ -639,37 +908,93 @@
 
   function communityPublishPanel() {
     if (!ui.communityPublishOpen) return '';
+    const info = ensureCommunityCardDraft();
     const ready = !!ui.communityTurnstileToken;
-    return `
-      <form id="community-publish-form" class="community-publish-form">
-        <div class="community-form-copy">
-          <span class="community-eyebrow">Publish current build</span>
-          <h3>Give this build a name</h3>
-          <p>Your public name is remembered only on this device. No account is created.</p>
-        </div>
-        <label>
+    const player = communityPlayerById(ui.communityAthleteId);
+    const metadata = communityDraftMetadata();
+    const clubs = catalogItems('clubs').filter((club) => clubLeagueId(club) === String(ui.communityLeagueId));
+    const authorField = ui.communityAuthorCached
+      ? `<div class="community-saved-author"><span>Publishing as</span><strong>${esc(ui.communityAuthor)}</strong><small>Saved on this device</small></div>`
+      : `<label>
           <span>Your name</span>
           <input id="community-author" name="authorName" type="text" minlength="2" maxlength="32" required autocomplete="name"
             value="${esc(ui.communityAuthor)}" placeholder="How friends know you" />
-        </label>
-        <label>
-          <span>Build name</span>
-          <input id="community-build-name" name="buildName" type="text" minlength="2" maxlength="60" required
-            value="${esc(ui.communityBuildName)}" placeholder="e.g. Press-resistant creator" />
-        </label>
-        <div class="community-verification">
-          ${ready ? '<span class="community-verified" aria-hidden="true">✓</span>' : '<div id="community-turnstile"></div>'}
-          <p id="community-turnstile-status" class="${ui.communityTurnstileError ? 'is-error' : ready ? 'is-ready' : ''}" aria-live="polite">
-            ${esc(ui.communityTurnstileError || (ready ? 'Verification complete.' : 'Complete the verification to publish.'))}
-          </p>
-        </div>
-        <div id="community-publish-error" class="community-form-error ${ui.communityPublishError ? '' : 'hidden'}" role="alert">${esc(ui.communityPublishError || '')}</div>
-        <div class="community-form-actions">
-          <button type="button" data-community-publish-cancel ${ui.communityPublishing ? 'disabled' : ''}>Cancel</button>
-          <button id="community-publish-submit" type="submit" class="is-primary" ${!ready || ui.communityPublishing ? 'disabled' : ''}>
-            ${ui.communityPublishing ? 'Publishing…' : 'Publish build'}
+        </label>`;
+    return `
+      <form id="community-publish-form" class="community-publish-form">
+        <section class="community-publish-preview">
+          <span class="community-eyebrow">Live card preview</span>
+          ${BC.render({
+            info,
+            metadata,
+            catalog: ui.utCatalog,
+            playstyles: communityPlaystyles(info),
+          })}
+          <button type="button" data-community-athlete-picker-toggle class="community-change-athlete" ${ui.utLoading ? 'disabled' : ''}>
+            <span>${player ? 'Change athlete' : 'Choose athlete'}</span>
+            <small>${player ? esc(`${player.name} · ${player.positions.join(' / ')}`) : (ui.utLoading ? 'Finding the closest match…' : 'Select card artwork')}</small>
           </button>
-        </div>
+        </section>
+
+        <section class="community-publish-settings">
+          <div class="community-form-copy">
+            <span class="community-eyebrow">Publish current build</span>
+            <h3>Personalize your player card</h3>
+            <p>The OVR, face stats, positions, PlayStyles, Skill Moves and Weak Foot come directly from this build.</p>
+          </div>
+          <div class="community-form-grid">
+            ${authorField}
+            <label>
+              <span>Athlete name <small id="community-athlete-name-count">${Array.from(ui.communityAthleteName).length}/15</small></span>
+              <input id="community-athlete-name" name="athleteName" type="text" minlength="1" maxlength="15" required
+                value="${esc(ui.communityAthleteName)}" placeholder="Card display name" aria-describedby="community-athlete-name-rule" />
+              <small id="community-athlete-name-rule">Up to 15 characters and no more than 2 spaces.</small>
+            </label>
+            <label>
+              <span>Build name <small>Optional</small></span>
+              <input id="community-build-name" name="buildName" type="text" maxlength="60"
+                value="${esc(ui.communityBuildName)}" placeholder="${esc(ui.communityAthleteName || 'Uses the athlete name')}" />
+            </label>
+            <label>
+              <span>Rarity</span>
+              <select id="community-rarity" required ${ui.utLoading ? 'disabled' : ''}>
+                ${catalogOptions('rarities', ui.communityRarityId)}
+              </select>
+            </label>
+            <label>
+              <span>League</span>
+              <select id="community-league" required ${ui.utLoading ? 'disabled' : ''}>
+                ${catalogOptions('leagues', ui.communityLeagueId, publishableLeagues())}
+              </select>
+            </label>
+            <label>
+              <span>Club</span>
+              <select id="community-club" required ${ui.utLoading || !clubs.length ? 'disabled' : ''}>
+                ${catalogOptions('clubs', ui.communityClubId, clubs)}
+              </select>
+            </label>
+            <label>
+              <span>Nation</span>
+              <select id="community-nation" required ${ui.utLoading ? 'disabled' : ''}>
+                ${catalogOptions('nations', ui.communityNationId)}
+              </select>
+            </label>
+          </div>
+          <div class="community-verification">
+            ${ready ? '<span class="community-verified" aria-hidden="true">✓</span>' : '<div id="community-turnstile"></div>'}
+            <p id="community-turnstile-status" class="${ui.communityTurnstileError ? 'is-error' : ready ? 'is-ready' : ''}" aria-live="polite">
+              ${esc(ui.communityTurnstileError || (ready ? 'Verification complete.' : 'Complete the verification to publish.'))}
+            </p>
+          </div>
+          <div id="community-publish-error" class="community-form-error ${ui.communityPublishError ? '' : 'hidden'}" role="alert">${esc(ui.communityPublishError || '')}</div>
+          <div class="community-form-actions">
+            <button type="button" data-community-publish-cancel ${ui.communityPublishing ? 'disabled' : ''}>Cancel</button>
+            <button id="community-publish-submit" type="submit" class="is-primary" ${!ready || ui.communityPublishing || ui.utLoading || !player ? 'disabled' : ''}>
+              ${ui.communityPublishing ? 'Publishing…' : 'Publish build'}
+            </button>
+          </div>
+        </section>
+        ${communityAthletePicker(info)}
       </form>`;
   }
 
@@ -684,6 +1009,7 @@
           <code>window.COMMUNITY_CONFIG</code>
         </div>`;
     }
+    if (communityConfigured()) void ensureUtPlayers();
     const positionChips = communityPositionOptions.map((position) => {
       const selected = ui.communityPosition === position;
       return `<button type="button" data-community-position="${position}" aria-pressed="${selected}" class="${selected ? 'is-on' : ''}">${position === 'all' ? 'All' : position}</button>`;
@@ -777,7 +1103,10 @@
       status.classList.toggle('is-error', !!ui.communityTurnstileError);
       status.classList.toggle('is-ready', !!ui.communityTurnstileToken);
     }
-    if (submit) submit.disabled = !ui.communityTurnstileToken || ui.communityPublishing;
+    if (submit) submit.disabled = !ui.communityTurnstileToken
+      || ui.communityPublishing
+      || ui.utLoading
+      || !communityPlayerById(ui.communityAthleteId);
   }
 
   function mountCommunityTurnstile() {
@@ -817,10 +1146,30 @@
     const form = $('#community-publish-form');
     if (!api || !communityConfigured() || !form || ui.communityPublishing) return;
     if (!form.checkValidity()) { form.reportValidity(); return; }
-    const authorName = ($('#community-author') || {}).value.trim();
-    const buildName = ($('#community-build-name') || {}).value.trim();
+    const authorInput = $('#community-author');
+    const athleteInput = $('#community-athlete-name');
+    const authorName = (authorInput ? authorInput.value : ui.communityAuthor).trim();
+    const athleteName = (athleteInput ? athleteInput.value : ui.communityAthleteName).trim();
+    const buildName = (($('#community-build-name') || {}).value || '').trim() || athleteName;
+    if (!BC.isValidCardName(athleteName)) {
+      ui.communityPublishError = 'Athlete name must have 1 to 15 characters and no more than 2 spaces.';
+      if (athleteInput) {
+        athleteInput.setCustomValidity(ui.communityPublishError);
+        athleteInput.reportValidity();
+        athleteInput.setCustomValidity('');
+      }
+      return;
+    }
     ui.communityAuthor = authorName;
     ui.communityBuildName = buildName;
+    ui.communityAthleteName = athleteName;
+    const card = communityDraftMetadata();
+    if (!card.utPlayerId || !card.utPlayerEaId || !card.athleteImagePath
+      || !card.rarityId || !card.leagueId || !card.clubId || !card.nationId) {
+      ui.communityPublishError = 'Choose an athlete, rarity, league, club and nation before publishing.';
+      refreshModal();
+      return;
+    }
     if (!ui.communityTurnstileToken) {
       ui.communityTurnstileError = 'Complete the verification before publishing.';
       updateCommunityVerification();
@@ -837,6 +1186,7 @@
         authorName,
         buildName,
         buildCode: S.encode(build),
+        card,
         turnstileToken: ui.communityTurnstileToken,
         signal: controller.signal,
       });
@@ -844,6 +1194,7 @@
       ui.communityLoaded = true;
       ui.communityPublishOpen = false;
       ui.communityBuildName = '';
+      ui.communityAuthorCached = true;
       ui.communityTurnstileToken = '';
       ui.communityTurnstileError = null;
       try { api.unmountTurnstile(); } catch (e) {}
@@ -1260,13 +1611,31 @@
 
   // ---- UT players modal ----
   function ensureUtPlayers() {
-    if (ui.utPlayers || ui.utLoading) return;
+    if (ui.utPlayers && ui.utCatalog) return Promise.resolve({ players: ui.utPlayers, catalog: ui.utCatalog });
+    if (ui.utLoadPromise) return ui.utLoadPromise;
     ui.utLoading = true; ui.utError = null;
-    fetch('data/ut_players_80.json')
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((rows) => { ui.utPlayers = rows; })
+    const loadJson = (url) => fetch(url)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      });
+    ui.utLoadPromise = Promise.all([
+      loadJson('data/ut_players_80.json'),
+      loadJson('data/ut_card_catalog.json'),
+    ])
+      .then(([rows, catalog]) => {
+        if (!Array.isArray(rows) || !catalog || typeof catalog !== 'object') throw new Error('Invalid UT player data.');
+        ui.utPlayers = rows;
+        ui.utCatalog = catalog;
+        return { players: rows, catalog };
+      })
       .catch((e) => { ui.utError = e.message || 'Failed to load players.'; })
-      .finally(() => { ui.utLoading = false; if (ui.modal === 'utplayers') render(); });
+      .finally(() => {
+        ui.utLoading = false;
+        ui.utLoadPromise = null;
+        if (ui.modal === 'utplayers' || ui.modal === 'community') render();
+      });
+    return ui.utLoadPromise;
   }
   const utImage = (p) => p.cardImagePath ? `https://game-assets.fut.gg/${p.cardImagePath}` : '';
   // targetPlan depends only on the archetype (base/max/tier per attribute), never on
@@ -1586,9 +1955,15 @@
     ui.modal = id;
     ui.selectedAttr = null;
     ui.psPicker = false;
-    if (id === 'community' && !ui.communityAuthor) {
+    if (id === 'community') {
       const api = communityApi();
-      try { ui.communityAuthor = api ? api.getSavedAuthor() || '' : ''; } catch (e) {}
+      try {
+        const savedAuthor = api ? api.getSavedAuthor() || '' : '';
+        if (savedAuthor) ui.communityAuthor = savedAuthor;
+        ui.communityAuthorCached = !!savedAuthor;
+      } catch (e) {
+        ui.communityAuthorCached = false;
+      }
     }
     render();
     if (id === 'community' && communityConfigured() && !ui.communityLoaded && !ui.communityLoading) void loadCommunityBuilds();
@@ -1599,6 +1974,8 @@
     ui.communityPublishError = null;
     ui.communityTurnstileToken = '';
     ui.communityTurnstileError = null;
+    ui.communityAthletePickerOpen = false;
+    if (communityConfigured()) void ensureUtPlayers();
     openModal('community', opener);
   }
   function closeModal() {
@@ -1627,6 +2004,7 @@
       ui.communityPublishError = null;
       ui.communityTurnstileToken = '';
       ui.communityTurnstileError = null;
+      ui.communityAthletePickerOpen = false;
     }
     ui.modal = null;
     ui.psPicker = false;
@@ -1652,7 +2030,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -1680,6 +2058,7 @@
       if (t.hasAttribute('data-community-publish-toggle')) {
         if (!build.archetypeId) return toast('Select an archetype before publishing.');
         ui.communityPublishOpen = !ui.communityPublishOpen;
+        ui.communityAthletePickerOpen = false;
         ui.communityPublishError = null;
         ui.communityTurnstileError = null;
         if (!ui.communityPublishOpen) {
@@ -1695,6 +2074,7 @@
         ui.communityPublishError = null;
         ui.communityTurnstileToken = '';
         ui.communityTurnstileError = null;
+        ui.communityAthletePickerOpen = false;
         try { if (api) api.unmountTurnstile(); } catch (error) {}
         refreshModal();
         queueMicrotask(() => {
@@ -1702,6 +2082,31 @@
           if (toggle) toggle.focus({ preventScroll: true });
         });
         return;
+      }
+      if (t.hasAttribute('data-community-athlete-picker-toggle')) {
+        ui.communityAthletePickerOpen = !ui.communityAthletePickerOpen;
+        return refreshModal();
+      }
+      if (t.hasAttribute('data-community-athlete-picker-close')) {
+        ui.communityAthletePickerOpen = false;
+        return refreshModal();
+      }
+      if (t.dataset.communityAthlete) {
+        const player = communityPlayerById(t.dataset.communityAthlete);
+        if (!setCommunityAthlete(player)) return;
+        ui.communityAthletePickerOpen = false;
+        ui.communityPublishError = null;
+        return refreshModal();
+      }
+      if (t.dataset.communityAthletePosition) {
+        const position = t.dataset.communityAthletePosition;
+        if (position === 'all') ui.communityAthletePositions = [];
+        else {
+          const index = ui.communityAthletePositions.indexOf(position);
+          if (index >= 0) ui.communityAthletePositions.splice(index, 1);
+          else ui.communityAthletePositions.push(position);
+        }
+        return refreshModal();
       }
       if (t.dataset.communityPosition) {
         ui.communityPosition = t.dataset.communityPosition;
@@ -1811,13 +2216,17 @@
       }
       if (t.id === 'ut-search') { ui.utQuery = t.value; return refreshModal(); }
       if (t.id === 'community-search') { ui.communityQuery = t.value; return updateCommunityResults(); }
+      if (t.id === 'community-athlete-search') { ui.communityAthleteQuery = t.value; return refreshModal(); }
       if (t.id === 'community-author') {
         ui.communityAuthor = t.value;
-        const api = communityApi();
-        try { if (api) api.saveAuthor(t.value); } catch (error) {}
         return;
       }
       if (t.id === 'community-build-name') { ui.communityBuildName = t.value; return; }
+      if (t.id === 'community-athlete-name') {
+        ui.communityAthleteName = t.value;
+        ui.communityPublishError = null;
+        return refreshModal();
+      }
       if (t.dataset.body) return liveBody(t.dataset.body, parseInt(t.value, 10));
       if (t.hasAttribute('data-attr-range')) return liveAttrRange(t);
     });
@@ -1828,6 +2237,24 @@
     });
     document.body.addEventListener('change', (e) => {
       if (e.target.id === 'level-input') return render(); // restore the normalized value when leaving the field
+      if (e.target.id === 'community-rarity') {
+        ui.communityRarityId = e.target.value;
+        return refreshModal();
+      }
+      if (e.target.id === 'community-league') {
+        ui.communityLeagueId = e.target.value;
+        const clubs = catalogItems('clubs').filter((club) => clubLeagueId(club) === ui.communityLeagueId);
+        ui.communityClubId = clubs[0] ? catalogId(clubs[0]) : '';
+        return refreshModal();
+      }
+      if (e.target.id === 'community-club') {
+        ui.communityClubId = e.target.value;
+        return refreshModal();
+      }
+      if (e.target.id === 'community-nation') {
+        ui.communityNationId = e.target.value;
+        return refreshModal();
+      }
       if (e.target.dataset.body) return commitBodyDrag();
       if (e.target.hasAttribute('data-attr-range')) return adjustAttr(ui.selectedAttr, parseInt(e.target.value, 10), 'set');
     });

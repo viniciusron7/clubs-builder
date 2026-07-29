@@ -20,7 +20,9 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Attributes** — 8 categories with a faithful **AP (Attribute Points)** system:
   total AP per level, per-point cost based on tier and value, and tier discounts
   for key attributes. The maximum level is **100**, with **3167 total AP**. The
-  editor includes +/− controls, a slider, next-point cost, and a breakdown.
+  editor includes +/− controls, a slider, next-point cost, and a breakdown. The
+  six outfield categories also display their calculated face-stat OVRs:
+  **PAC, SHO, PAS, DRI, DEF, and PHY**, using body-adjusted effective values.
 - **Body** — height and weight (limited by the archetype) adjust attributes using
   the actual formula and calculate **AcceleRATE** (Explosive/Lengthy/Controlled).
 - **PlayStyles** (modal) — 4 **signature** PlayStyles (upgraded to "+" at levels
@@ -69,10 +71,15 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Undo/redo** — buttons and shortcuts Ctrl/Cmd+Z, Ctrl/Cmd+Y, and Cmd+Shift+Z.
 - **Share by URL** (`?b=...`, v2 format with v1 link support) and **save as an
   image** with estimated OVRs by position.
-- **Community Builds** — a public, account-free gallery. Authors enter their name
-  and a build name; the browser remembers the author and locally stores the
-  deletion credential for each publication. The optional backend uses Supabase
-  and Cloudflare Turnstile with RLS, validation, CORS, and publication limits.
+- **Community Builds** — a public, account-free gallery rendered as FC-style
+  player cards. The card preview uses the build's OVR, face stats, positions,
+  Skill Moves, Weak Foot, and PlayStyles. A local UT catalog finds the closest
+  athlete by attributes, positions, height, and weight; the publisher may
+  replace that athlete and choose the rarity, nation, league, and a club from
+  that league. Authors enter their public name only once, can optionally name
+  each build, and locally retain its deletion credential. The backend uses
+  Supabase and Cloudflare Turnstile with RLS, catalog validation, CORS, and
+  publication limits.
 
 The three configuration tabs (PlayStyles / Specializations / Body) open
 **modals**. Community Builds has a dedicated action in the summary bar, while
@@ -101,8 +108,10 @@ clubs-builder/
     share.js          # URL encode/decode and canvas image export
     community-config.js # public gallery URL and site key
     community.js      # API client, local cache, and Turnstile
+    build-card.js     # reusable FC-style Community card renderer
     app.js            # state, rendering, and events
-  data/               # compact UT dataset used by the interface
+  data/               # enriched UT dataset and card metadata catalog
+  scripts/            # reproducible UT catalog enrichment
   supabase/           # Community Builds migration and Edge Function
   docs/               # backend activation and technical contract
   tests/              # node:test suite and browser smoke test

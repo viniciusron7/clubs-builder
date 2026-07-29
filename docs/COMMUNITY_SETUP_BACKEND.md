@@ -30,12 +30,20 @@ Apply the migration:
 supabase db push
 ```
 
+This applies both the base Community Builds migration and
+`20260729010000_community_build_card_metadata.sql`.
+
 The migration creates:
 
 - `community_builds`, with RLS and SELECT grants limited to public columns;
+- nullable, catalog-validated card presentation metadata for new publications;
 - `community_rate_limit_events`, inaccessible to public roles;
 - an advisory-lock-protected rate-limit RPC;
 - a service-role-only token deletion RPC.
+
+The card metadata migration is additive. Publications created before it was
+applied keep every card column `NULL` and continue to be returned by the feed.
+Do not make the new columns `NOT NULL` or backfill them with guessed values.
 
 Do not add INSERT, UPDATE or DELETE grants for `anon` or `authenticated`.
 `management_token_hash` and network hashes must never be publicly selectable.
@@ -134,6 +142,17 @@ next page.
       "authorName": "Vinicius",
       "buildName": "Creator CAM",
       "buildCode": "BASE64URL_V2",
+      "card": {
+        "version": 1,
+        "athleteName": "RONCETTI",
+        "utPlayerId": 141787,
+        "utPlayerEaId": 84098298,
+        "athleteImagePath": "2026/player-item/26-84098298.ff885d05c383f4f3285dacb138b5a8fe88332debaaed31ef79a8ef7e584ccb42.webp",
+        "rarityId": "107",
+        "leagueId": "53",
+        "clubId": "448",
+        "nationId": "45"
+      },
       "createdAt": "2026-07-29T12:00:00.000000+00:00"
     }
   ],
@@ -149,8 +168,19 @@ Content-Type: application/json
 
 {
   "authorName": "Vinicius",
-  "buildName": "Creator CAM",
+  "buildName": "",
   "buildCode": "BASE64URL_V2",
+  "card": {
+    "version": 1,
+    "athleteName": "RONCETTI",
+    "utPlayerId": 141787,
+    "utPlayerEaId": 84098298,
+    "athleteImagePath": "2026/player-item/26-84098298.ff885d05c383f4f3285dacb138b5a8fe88332debaaed31ef79a8ef7e584ccb42.webp",
+    "rarityId": "107",
+    "leagueId": "53",
+    "clubId": "448",
+    "nationId": "45"
+  },
   "turnstileToken": "FRESH_SINGLE_USE_TOKEN"
 }
 ```
@@ -159,8 +189,20 @@ The API accepts only the existing compact v2 build format. It validates the
 archetype, body ranges, level, known attributes, PlayStyles, specializations and
 positions; requires Skill Moves and Weak Foot values present in the compact
 payload to be between 2 and 5; removes unknown top-level fields; and stores a
-canonical encoding. Author names must contain 2–32 characters, and build names
-2–60 characters.
+canonical encoding. Author names must contain 2–32 characters. Build names are
+optional for card publications, contain at most 60 characters, and default to
+the athlete name when omitted or blank.
+
+`card` is optional only for backward compatibility with the original
+publisher. New clients should always send it. `card.version` must be `1`.
+Athlete names contain 1–15 Unicode characters and no more than two normalized
+spaces. The selected UT player id, EA item id and relative athlete image path
+must identify the same item in `data/ut_card_catalog.json`. Rarity, league,
+club and nation ids must exist in that catalog, and the selected club must
+belong to the selected league. Arbitrary image URLs and unrecognized catalog
+ids are rejected. Catalog ids may be sent as positive integers or decimal
+strings; responses normalize rarity, league, club and nation ids to strings.
+The two UT player ids are returned as numbers.
 
 A successful response has status `201`:
 
@@ -169,13 +211,28 @@ A successful response has status `201`:
   "build": {
     "id": "00000000-0000-4000-8000-000000000000",
     "authorName": "Vinicius",
-    "buildName": "Creator CAM",
+    "buildName": "RONCETTI",
     "buildCode": "CANONICAL_BASE64URL_V2",
+    "card": {
+      "version": 1,
+      "athleteName": "RONCETTI",
+      "utPlayerId": 141787,
+      "utPlayerEaId": 84098298,
+      "athleteImagePath": "2026/player-item/26-84098298.ff885d05c383f4f3285dacb138b5a8fe88332debaaed31ef79a8ef7e584ccb42.webp",
+      "rarityId": "107",
+      "leagueId": "53",
+      "clubId": "448",
+      "nationId": "45"
+    },
     "createdAt": "2026-07-29T12:00:00.000000+00:00"
   },
   "manageToken": "cbm_SAVE_THIS_VALUE"
 }
 ```
+
+Legacy rows and legacy POST responses use the same object shape with
+`"card": null`. Extra card fields are additive, so existing clients that ignore
+unknown response properties remain compatible.
 
 Store `manageToken` in browser local storage under the build id. It is returned
 only at publication time and cannot be recovered from the database. Losing it
@@ -200,7 +257,8 @@ deno fmt --check supabase/functions/community-builds
 deno check --config supabase/functions/community-builds/deno.json \
   supabase/functions/community-builds/index.ts
 deno test --config supabase/functions/community-builds/deno.json \
-  supabase/functions/community-builds/build-code_test.ts
+  supabase/functions/community-builds/build-code_test.ts \
+  supabase/functions/community-builds/card-metadata_test.ts
 ```
 
 For an integration test, start the local Supabase stack, apply the migration and
@@ -222,4 +280,7 @@ secret. Confirm that:
 3. a valid POST returns a token but subsequent GET never returns it;
 4. the sixth POST within the default hour receives `429` and `Retry-After`;
 5. excessive verification attempts are blocked before another Siteverify call;
-6. DELETE succeeds only with the token returned for that exact build.
+6. card ids and the athlete image are rejected unless they match the catalog;
+7. a club is rejected when it does not belong to the selected league;
+8. legacy rows are returned with `card: null`;
+9. DELETE succeeds only with the token returned for that exact build.

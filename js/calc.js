@@ -177,6 +177,49 @@ window.Calc = (function () {
     return D.barColors[D.barColors.length - 1][1];
   }
 
+  // ---- category OVRs (PAC / SHOT / PAS / DRI / DEF / PHY) ----
+  const CATEGORY_OVR_WEIGHTS = Object.freeze({
+    pace: Object.freeze({ acceleration: 45, sprint_speed: 55 }),
+    scoring: Object.freeze({
+      att_position: 5, finishing: 45, shot_power: 20,
+      long_shots: 20, volleys: 5, penalties: 5,
+    }),
+    passing: Object.freeze({
+      vision: 20, crossing: 20, fk_accuracy: 5,
+      short_passing: 35, long_passing: 15, curve: 5,
+    }),
+    ball_control: Object.freeze({
+      agility: 10, balance: 5, reactions: 5,
+      ball_control: 30, dribbling: 45, composure: 5,
+    }),
+    defending: Object.freeze({
+      interceptions: 20, heading_accuracy: 10, def_aware: 30,
+      standing_tackle: 30, sliding_tackle: 10,
+    }),
+    physical: Object.freeze({ jumping: 5, strength: 50, stamina: 25, aggression: 20 }),
+  });
+
+  function categoryOverall(categoryId, values) {
+    const weights = CATEGORY_OVR_WEIGHTS[categoryId];
+    if (!weights || !values) return null;
+    let weightedSum = 0;
+    for (const [attributeId, weight] of Object.entries(weights)) {
+      const value = Number(values[attributeId]);
+      if (!Number.isFinite(value)) return null;
+      weightedSum += value * weight;
+    }
+    return Math.floor((weightedSum + 50) / 100);
+  }
+
+  function categoryOverallMap(values) {
+    return Object.fromEntries(
+      Object.keys(CATEGORY_OVR_WEIGHTS).map((categoryId) => [
+        categoryId,
+        categoryOverall(categoryId, values),
+      ]),
+    );
+  }
+
   // ---- OVR estimate by highlighted position (weights.js v2) ----
   // Builder ids differ from the model for two historical attributes.
   const PESO_KEY = { att_position: 'att_positioning', def_aware: 'defensive_awareness' };
@@ -1055,6 +1098,7 @@ window.Calc = (function () {
       purchased[a.id] = a.currentValue;
       eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0), 1, 99);
     }));
+    const categoryOveralls = categoryOverallMap(eff);
 
     // AP spent
     let spent = 0;
@@ -1074,6 +1118,7 @@ window.Calc = (function () {
       bodyAdj,
       purchased,
       effective: eff,
+      categoryOveralls,
       ap: { total, spent, available: total - spent },
       accel,
       slots: { unlocked: unlockedSlots(build.level), signaturePlus: signaturePlusCount(build.level) },
@@ -1085,6 +1130,7 @@ window.Calc = (function () {
     baseCategories, apCostAt, apCost, totalAP, apCostNextPoint, affordableTarget,
     bodyAdjustments, accelType,
     playstyleEligible, unlockedSlots, signaturePlusCount, barColor,
+    categoryOverall, categoryOverallMap,
     archetypeSpecializations, specializationUnlocked, requirementUnlockPlan, quickUnlockCost, signatureSlots, curVal, findAttr,
     pesoFor, pesoForPositions, overallWeightProfile, overallRawForPosition, overallRawForPositions, overallRawForValues,
     overallForPosition, overallForPositions, overallIfPrimary, overallMapForValues, optimize, maximizeSum, targetPlan,

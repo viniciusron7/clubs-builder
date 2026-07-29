@@ -72,10 +72,14 @@ supabase functions deploy community-builds --use-api
 ```
 
 The first command applies
-`supabase/migrations/20260729000000_community_builds.sql`. The second deploys
-the Edge Function using the public configuration in `supabase/config.toml`.
-Keep `--use-api`: the function imports the same game rules used by the frontend,
-which live outside the `supabase/` directory.
+`supabase/migrations/20260729000000_community_builds.sql` and the additive card
+metadata migration
+`supabase/migrations/20260729010000_community_build_card_metadata.sql`.
+Existing publications are preserved and appear with legacy card defaults. The
+second command deploys the Edge Function using the public configuration in
+`supabase/config.toml`. Keep `--use-api`: the function imports the same game
+rules and UT card catalog used by the frontend, which live outside the
+`supabase/` directory.
 
 ## Connect the frontend
 
@@ -94,11 +98,15 @@ commit and push the changes, then wait for GitHub Pages to update.
 ## Final verification
 
 1. Open **Community Builds**. The "Setup required" screen should disappear.
-2. Open a build, click **Publish current build**, enter your name and a build
-   name, and complete the verification.
-3. Reopen the publisher: the author name should remain filled in.
-4. The publication should appear in the gallery and open the correct link.
-5. In the same browser, the publication should show **Delete**. In another
+2. Open a build, click **Publish current build**, enter your public and athlete
+   names, select the card metadata and complete the verification.
+3. Leave the optional build name empty and confirm that it falls back to the
+   athlete name.
+4. Reopen the publisher: the saved public name should no longer need to be
+   entered.
+5. The publication should appear in the gallery with the selected athlete,
+   rarity, league, club and nation, and open the correct build.
+6. In the same browser, the publication should show **Delete**. In another
    browser, it should be read-only.
 
 The remembered name and deletion credentials are stored in `localStorage`. If

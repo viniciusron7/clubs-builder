@@ -53,6 +53,60 @@ window.Community = (function (root) {
     return Array.from(value).length;
   }
 
+  function decimalId(value) {
+    const id = typeof value === 'number' && Number.isSafeInteger(value)
+      ? String(value)
+      : cleanString(value);
+    return /^[1-9]\d{0,15}$/.test(id) && Number(id) <= Number.MAX_SAFE_INTEGER ? id : '';
+  }
+
+  function validateCardMetadata(input) {
+    if (!input || typeof input !== 'object' || Number(input.version) !== 1) {
+      throw new CommunityError('Choose the player card details before publishing.', { code: 'INVALID_CARD' });
+    }
+    const athleteName = normalizedSingleLine(input.athleteName);
+    const spaces = (athleteName.match(/ /g) || []).length;
+    if (characterLength(athleteName) < 1 || characterLength(athleteName) > 15 || spaces > 2) {
+      throw new CommunityError(
+        'Athlete name must have 1 to 15 characters and no more than 2 spaces.',
+        { code: 'INVALID_ATHLETE_NAME' },
+      );
+    }
+    const utPlayerId = decimalId(input.utPlayerId);
+    const utPlayerEaId = decimalId(input.utPlayerEaId);
+    const rarityId = decimalId(input.rarityId);
+    const leagueId = decimalId(input.leagueId);
+    const clubId = decimalId(input.clubId);
+    const nationId = decimalId(input.nationId);
+    if (!utPlayerId || !utPlayerEaId) {
+      throw new CommunityError('Choose a valid athlete image.', { code: 'INVALID_ATHLETE' });
+    }
+    if (!rarityId || !leagueId || !clubId || !nationId) {
+      throw new CommunityError('Choose a rarity, league, club and nation.', { code: 'INVALID_CARD_IDENTITY' });
+    }
+    const athleteImagePath = cleanString(input.athleteImagePath);
+    if (
+      !athleteImagePath
+      || athleteImagePath.length > 256
+      || athleteImagePath.includes('..')
+      || athleteImagePath.startsWith('/')
+      || !/^[a-zA-Z0-9][a-zA-Z0-9._~!$&'()+,;=:@%/-]*$/.test(athleteImagePath)
+    ) {
+      throw new CommunityError('Choose a valid athlete image.', { code: 'INVALID_ATHLETE_IMAGE' });
+    }
+    return {
+      version: 1,
+      athleteName,
+      utPlayerId,
+      utPlayerEaId,
+      athleteImagePath,
+      rarityId,
+      leagueId,
+      clubId,
+      nationId,
+    };
+  }
+
   function configuredApiUrl() {
     const raw = cleanString(config().apiUrl);
     if (!raw) {
@@ -386,15 +440,16 @@ window.Community = (function (root) {
       throw new CommunityError('Please complete the publication form.', { code: 'INVALID_PUBLISH_INPUT' });
     }
     const authorName = normalizedSingleLine(input.authorName);
-    const buildName = normalizedSingleLine(input.buildName);
+    const card = validateCardMetadata(input.card);
+    const buildName = normalizedSingleLine(input.buildName) || card.athleteName;
     const buildCode = cleanString(input.buildCode);
     const turnstileToken = cleanString(input.turnstileToken);
 
     if (characterLength(authorName) < 2 || characterLength(authorName) > 32) {
       throw new CommunityError('Enter a public name with 2 to 32 characters.', { code: 'INVALID_AUTHOR_NAME' });
     }
-    if (characterLength(buildName) < 2 || characterLength(buildName) > 60) {
-      throw new CommunityError('Enter a build name with 2 to 60 characters.', { code: 'INVALID_BUILD_NAME' });
+    if (characterLength(buildName) < 1 || characterLength(buildName) > 60) {
+      throw new CommunityError('Enter a build name with up to 60 characters.', { code: 'INVALID_BUILD_NAME' });
     }
     if (!buildCode || buildCode.length > 16384) {
       throw new CommunityError('The current build cannot be published.', { code: 'INVALID_BUILD_CODE' });
@@ -402,7 +457,7 @@ window.Community = (function (root) {
     if (!turnstileToken || turnstileToken.length > 2048) {
       throw new CommunityError('Complete the verification before publishing.', { code: 'TURNSTILE_REQUIRED' });
     }
-    return { authorName, buildName, buildCode, turnstileToken };
+    return { authorName, buildName, buildCode, card, turnstileToken };
   }
 
   async function publish(input) {
