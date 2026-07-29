@@ -153,6 +153,7 @@ next page.
         "clubId": "448",
         "nationId": "45"
       },
+      "favoriteCount": 3,
       "createdAt": "2026-07-29T12:00:00.000000+00:00"
     }
   ],
@@ -224,6 +225,7 @@ A successful response has status `201`:
       "clubId": "448",
       "nationId": "45"
     },
+    "favoriteCount": 0,
     "createdAt": "2026-07-29T12:00:00.000000+00:00"
   },
   "manageToken": "cbm_SAVE_THIS_VALUE"
@@ -237,6 +239,33 @@ unknown response properties remain compatible.
 Store `manageToken` in browser local storage under the build id. It is returned
 only at publication time and cannot be recovered from the database. Losing it
 does not remove the build; an administrator can still moderate it in Supabase.
+
+### Favorite
+
+```http
+POST /functions/v1/community-builds/v1/builds/BUILD_UUID/favorite
+Content-Type: application/json
+
+{
+  "favorite": true,
+  "voterToken": "cbf_RANDOM_32_BYTE_BASE64URL_TOKEN"
+}
+```
+
+The browser generates and stores one random token without collecting a name,
+email address, or account. Supabase stores only a keyed HMAC of that token and
+enforces one favorite per build and token. The response contains the updated
+shared count and state:
+
+```json
+{
+  "favoriteCount": 4,
+  "favorited": true
+}
+```
+
+Send the same request with `"favorite": false` to remove the favorite. Requests
+are rate-limited by network in addition to the per-token uniqueness rule.
 
 ### Delete
 

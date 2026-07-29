@@ -72,7 +72,10 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Share by URL** (`?b=...`, v2 format with v1 link support) and **save as an
   image** with estimated OVRs by position.
 - **Community Builds** — a public, account-free gallery rendered as FC-style
-  player cards. The card preview uses the build's OVR, face stats, positions,
+  player cards and shown directly on the home page. Visitors can favorite builds
+  without signing in; the shared count is stored by Supabase while the browser
+  keeps an anonymous device token to prevent duplicate favorites. The card
+  preview uses the build's OVR, face stats, positions,
   Skill Moves, Weak Foot, and PlayStyles. A local UT catalog finds the closest
   athlete by attributes, positions, height, and weight; the publisher may
   replace that athlete and choose the rarity, nation, league, and a club from
@@ -81,10 +84,11 @@ python3 -m http.server 4173 --bind 0.0.0.0
   Supabase and Cloudflare Turnstile with RLS, catalog validation, CORS, and
   publication limits.
 
-The three configuration tabs (PlayStyles / Specializations / Body) open
-**modals**. Community Builds has a dedicated action in the summary bar, while
-Publish Build is available as a separate call to action in the tools bar. The
-main area displays attributes and the selected attribute's detail panel.
+The home page displays Community Builds and a **Create Build** action. The three
+configuration tabs (PlayStyles / Specializations / Body) open **modals** inside
+the builder. Publish Build is a separate call to action in the tools bar and its
+modal contains only the publication workflow. The main editor area displays
+attributes and the selected attribute's detail panel.
 
 ## Structure
 

@@ -1,7 +1,7 @@
 /* ============================================================================
  * app.js — FC 26 Pro Clubs Builder controller (state + UI + events).
  * Faithful to the original layout: attributes are always visible with the detail
- * panel on the right; the configuration tabs and Community Builds actions open MODALS.
+ * panel on the right; Community Builds is the home view and configuration actions open modals.
  * Depends on window.DATA, window.Calc, and window.Share.
  * ========================================================================== */
 (function () {
@@ -19,7 +19,7 @@
   }
   let build = defaultBuild();
   const ui = {
-    filter: 'all', selectedAttr: null, modal: null,
+    view: 'community', filter: 'all', selectedAttr: null, modal: null,
     showWeights: false,
     optimizing: false, optimizeRunId: 0, optimizeController: null,
     psPicker: false,
@@ -34,6 +34,7 @@
     communityAthletePickerOpen: false, communityAthleteQuery: '', communityAthletePositions: [],
     communityAutoMatchKey: '', communityTurnstileToken: '', communityTurnstileError: null,
     communityRemovingId: null, communityRequestId: 0, communityController: null, communityPublishController: null,
+    communityFavoritePending: new Set(),
   };
   const OUTFIELD_POSITIONS = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
   // ponytail: maximum rows drawn per render; increase if the list becomes virtualized.
@@ -122,6 +123,18 @@
   // -------------------- main render --------------------
   function render() {
     const d = C.derive(build);
+    const communityHome = $('#community-home');
+    const builderApp = $('#builder-app');
+    const showingCommunity = ui.view === 'community';
+    communityHome.hidden = !showingCommunity;
+    builderApp.hidden = showingCommunity;
+    if (showingCommunity) {
+      keepFocus(() => {
+        renderCommunityHome();
+        renderModal(d);
+      });
+      return;
+    }
     keepFocus(() => {
       renderSummary(d);
       renderArchetypes();
@@ -162,8 +175,8 @@
     }).join('');
     $('#summary-bar').innerHTML = `
       <div class="summary-player flex items-center gap-2.5">${archInfo}</div>
-      <button id="btn-community-builds" type="button" data-modal="community" aria-haspopup="dialog"
-        class="summary-community" aria-label="Browse Community Builds">
+      <button id="btn-community-builds" type="button" data-view="community"
+        class="summary-community" aria-label="Back to Community Builds">
         <span>Community Builds</span>
       </button>
       <div class="summary-physique flex items-center gap-4">
@@ -515,7 +528,7 @@
     else if (ui.modal === 'optimize') { title = 'Optimize Overall'; body = optimizeModal(d); }
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
     else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
-    else if (ui.modal === 'community') { title = 'Community Builds'; body = communityModal(); }
+    else if (ui.modal === 'community') { title = 'Publish Build'; body = communityModal(); }
     box.dataset.modalKind = ui.modal;
     box.innerHTML = modalShell(title, body);
     root.classList.remove('hidden'); root.classList.add('flex');
@@ -835,8 +848,12 @@
   function communityCard(item, info) {
     const api = communityApi();
     let canDelete = false;
+    let favorited = false;
     try { canDelete = !!(api && api.getManageToken(item.id)); } catch (e) {}
+    try { favorited = !!(api && api.isFavorite(item.id)); } catch (e) {}
     const deleting = ui.communityRemovingId === item.id;
+    const favoritePending = ui.communityFavoritePending.has(String(item.id));
+    const favoriteCount = Math.max(0, Number(item.favoriteCount) || 0);
     const fallbackPlayer = item.card ? null : closestCommunityAthlete(info);
     const fallbackMetadata = fallbackPlayer ? {
       athleteName: BC.safeCardName(item.buildName || fallbackPlayer.cardName || fallbackPlayer.name || info.archName),
@@ -887,6 +904,11 @@
         <div class="community-overalls" aria-label="Position overalls">${positionSummary}</div>
         <footer class="community-card-actions">
           <a href="${esc(info.openUrl)}" target="_blank" rel="noopener noreferrer" class="community-open">Open build <span aria-hidden="true">↗</span></a>
+          <button type="button" data-community-favorite="${esc(item.id)}" class="community-favorite ${favorited ? 'is-favorite' : ''}"
+            aria-pressed="${favorited}" aria-label="${favorited ? 'Remove from favorites' : 'Add to favorites'}" ${favoritePending ? 'disabled' : ''}>
+            <span aria-hidden="true">${favorited ? '♥' : '♡'}</span>
+            <strong>${favoriteCount}</strong>
+          </button>
           <button type="button" data-community-copy="${esc(item.id)}">Copy link</button>
           ${canDelete ? `<button type="button" data-community-delete="${esc(item.id)}" class="community-delete" ${deleting ? 'disabled' : ''}>${deleting ? 'Deleting…' : 'Delete'}</button>` : ''}
         </footer>
@@ -1040,6 +1062,62 @@
       </form>`;
   }
 
+  function communityBrowser() {
+    const positionChips = communityPositionOptions.map((position) => {
+      const selected = ui.communityPosition === position;
+      return `<button type="button" data-community-position="${position}" aria-pressed="${selected}" class="${selected ? 'is-on' : ''}">${position === 'all' ? 'All' : position}</button>`;
+    }).join('');
+    return `
+      <section class="community-browser" aria-label="Browse community builds">
+        <div class="community-toolbar">
+          <div class="community-position-filter" aria-label="Filter by position">${positionChips}</div>
+          <div class="community-search-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input id="community-search" name="communitySearch" aria-label="Search community builds" type="search" value="${esc(ui.communityQuery)}" placeholder="Search build, author, position or OVR" />
+          </div>
+          <button type="button" data-community-refresh aria-label="Refresh community builds" title="Refresh">↻</button>
+        </div>
+        <div id="community-results" tabindex="-1">${communityResultsHtml()}</div>
+      </section>`;
+  }
+
+  function renderCommunityHome() {
+    const home = $('#community-home');
+    if (!home) return;
+    if (!communityConfigured()) {
+      home.innerHTML = `
+        <div class="community-home-shell">
+          <header class="community-home-header">
+            <div>
+              <span class="community-eyebrow">FC 26 player gallery</span>
+              <h1>Community Builds</h1>
+              <p>Discover builds made by other Clubs players, or start your own.</p>
+            </div>
+            <button id="btn-create-build" type="button" class="community-create-build">Create Build <span aria-hidden="true">→</span></button>
+          </header>
+          <div class="community-state is-setup" data-community-setup>
+            <span class="community-state-mark" aria-hidden="true">◇</span>
+            <h3>Community storage is not configured</h3>
+            <p>The builder is available, but Community Builds still needs its public API configuration.</p>
+          </div>
+        </div>`;
+      return;
+    }
+    void ensureUtPlayers();
+    home.innerHTML = `
+      <div class="community-home-shell">
+        <header class="community-home-header">
+          <div>
+            <span class="community-eyebrow">FC 26 player gallery</span>
+            <h1>Community Builds</h1>
+            <p>Explore player cards published by the community. Open any build to inspect it or create your own.</p>
+          </div>
+          <button id="btn-create-build" type="button" class="community-create-build">Create Build <span aria-hidden="true">→</span></button>
+        </header>
+        ${communityBrowser()}
+      </div>`;
+  }
+
   function communityModal() {
     if (!communityConfigured()) {
       return `
@@ -1051,41 +1129,21 @@
           <code>window.COMMUNITY_CONFIG</code>
         </div>`;
     }
-    if (communityConfigured()) void ensureUtPlayers();
-    const positionChips = communityPositionOptions.map((position) => {
-      const selected = ui.communityPosition === position;
-      return `<button type="button" data-community-position="${position}" aria-pressed="${selected}" class="${selected ? 'is-on' : ''}">${position === 'all' ? 'All' : position}</button>`;
-    }).join('');
+    void ensureUtPlayers();
     return `
       <div class="community-shell">
-        <section class="community-intro">
-          <div>
-            <span class="community-eyebrow">Built by players</span>
-            <p>Try public builds from the community or publish the one currently open in your builder.</p>
-          </div>
-          <button id="community-publish-toggle" type="button" data-community-publish-toggle class="community-publish-toggle" ${!build.archetypeId || ui.communityPublishing ? 'disabled' : ''}>
-            ${ui.communityPublishOpen ? 'Close publisher' : 'Publish current build'}
-          </button>
-        </section>
-        ${!build.archetypeId ? '<p class="community-no-build">Select an archetype before publishing. Browsing remains available.</p>' : ''}
         ${communityPublishPanel()}
-        <section class="community-browser" aria-label="Browse community builds">
-          <div class="community-toolbar">
-            <div class="community-position-filter" aria-label="Filter by position">${positionChips}</div>
-            <div class="community-search-wrap">
-              <span aria-hidden="true">⌕</span>
-              <input id="community-search" name="communitySearch" aria-label="Search community builds" type="search" value="${esc(ui.communityQuery)}" placeholder="Search build, author, position or OVR" />
-            </div>
-            <button type="button" data-community-refresh aria-label="Refresh community builds" title="Refresh">↻</button>
-          </div>
-          <div id="community-results" tabindex="-1">${communityResultsHtml()}</div>
-        </section>
       </div>`;
   }
 
   function updateCommunityResults() {
     const results = $('#community-results');
     if (results) results.innerHTML = communityResultsHtml();
+  }
+
+  function refreshCommunitySurface() {
+    if (ui.view === 'community') renderCommunityHome();
+    else if (ui.modal === 'community') refreshModal();
   }
 
   function mergeCommunityItems(items, append) {
@@ -1112,7 +1170,7 @@
     ui.communityError = null;
     if (append) ui.communityLoadingMore = true;
     else ui.communityLoading = true;
-    if (ui.modal === 'community') refreshModal();
+    refreshCommunitySurface();
     try {
       const result = await api.list({
         limit: 48,
@@ -1132,7 +1190,7 @@
         ui.communityLoading = false;
         ui.communityLoadingMore = false;
         if (ui.communityController === controller) ui.communityController = null;
-        if (ui.modal === 'community') refreshModal();
+        refreshCommunitySurface();
       }
     }
   }
@@ -1242,6 +1300,14 @@
       ui.communityTurnstileError = null;
       try { api.unmountTurnstile(); } catch (e) {}
       published = true;
+      ui.modal = null;
+      ui.view = 'community';
+      modalReturnFocus = null;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('b');
+        window.history.replaceState(null, '', url.toString());
+      } catch (e) {}
       let canManage = false;
       try { canManage = !!api.getManageToken(result.build.id); } catch (e) {}
       toast(canManage
@@ -1255,13 +1321,8 @@
     } finally {
       if (ui.communityPublishController === controller) ui.communityPublishController = null;
       ui.communityPublishing = false;
-      if (ui.modal === 'community') {
-        refreshModal();
-        if (published) queueMicrotask(() => {
-          const toggle = $('#community-publish-toggle');
-          if (toggle) toggle.focus({ preventScroll: true });
-        });
-      }
+      if (published) render();
+      else if (ui.modal === 'community') refreshModal();
     }
   }
 
@@ -1281,6 +1342,26 @@
     }
   }
 
+  async function toggleCommunityFavorite(id) {
+    const api = communityApi();
+    const item = communityItem(id);
+    const key = String(id || '');
+    if (!api || !item || ui.communityFavoritePending.has(key)) return;
+    let favorite = false;
+    try { favorite = !api.isFavorite(key); } catch (e) {}
+    ui.communityFavoritePending.add(key);
+    updateCommunityResults();
+    try {
+      const result = await api.setFavorite(key, favorite);
+      item.favoriteCount = Math.max(0, Number(result && result.favoriteCount) || 0);
+    } catch (error) {
+      toast(String((error && error.message) || 'The favorite could not be saved.').slice(0, 140));
+    } finally {
+      ui.communityFavoritePending.delete(key);
+      updateCommunityResults();
+    }
+  }
+
   async function removeCommunityBuild(id) {
     const api = communityApi();
     if (!api || ui.communityRemovingId) return;
@@ -1289,7 +1370,7 @@
     if (!canDelete) return toast('This build can only be deleted from the device that published it.');
     if (!confirm('Delete this community build? This cannot be undone.')) return;
     ui.communityRemovingId = id;
-    refreshModal();
+    refreshCommunitySurface();
     let removed = false;
     try {
       await api.remove(id);
@@ -1300,8 +1381,8 @@
       toast(String((error && error.message) || 'The build could not be deleted.').slice(0, 140));
     } finally {
       ui.communityRemovingId = null;
-      if (ui.modal === 'community') {
-        refreshModal();
+      if (ui.modal === 'community' || ui.view === 'community') {
+        refreshCommunitySurface();
         if (removed) queueMicrotask(() => {
           const results = $('#community-results');
           if (results) results.focus({ preventScroll: true });
@@ -1676,7 +1757,7 @@
       .finally(() => {
         ui.utLoading = false;
         ui.utLoadPromise = null;
-        if (ui.modal === 'utplayers' || ui.modal === 'community') render();
+        if (ui.modal === 'utplayers' || ui.modal === 'community' || ui.view === 'community') render();
       });
     return ui.utLoadPromise;
   }
@@ -2009,7 +2090,6 @@
       }
     }
     render();
-    if (id === 'community' && communityConfigured() && !ui.communityLoaded && !ui.communityLoading) void loadCommunityBuilds();
   }
   function openCommunityPublisher(opener) {
     if (!build.archetypeId) return toast('Select an archetype before publishing.');
@@ -2021,6 +2101,30 @@
     ui.communityAthletePickerOpen = false;
     if (communityConfigured()) void ensureUtPlayers();
     openModal('community', opener);
+  }
+  function showCommunityHome() {
+    ui.view = 'community';
+    ui.modal = null;
+    ui.psPicker = false;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('b');
+      window.history.replaceState(null, '', url.toString());
+    } catch (e) {}
+    render();
+    if (communityConfigured() && !ui.communityLoaded && !ui.communityLoading) void loadCommunityBuilds();
+    queueMicrotask(() => {
+      const create = $('#btn-create-build');
+      if (create) create.focus({ preventScroll: true });
+    });
+  }
+  function showBuilder() {
+    ui.view = 'builder';
+    render();
+    queueMicrotask(() => {
+      const target = build.archetypeId ? $('#level-input') : document.querySelector('[data-arch]');
+      if (target) target.focus({ preventScroll: true });
+    });
   }
   function closeModal() {
     if (ui.modal === 'community' && ui.communityPublishing) {
@@ -2071,10 +2175,11 @@
       const normalized = C.normalizeBuild(Object.assign(defaultBuild(), fromUrl));
       build = normalized.build;
       adjustedFromUrl = normalized.adjusted;
+      ui.view = 'builder';
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -2099,35 +2204,10 @@
       if (t.id === 'btn-maxsum') return openModal('maxsum', t);
       if (t.id === 'btn-utplayers') return openModal('utplayers', t);
       if (t.id === 'btn-publish-build') return openCommunityPublisher(t);
-      if (t.hasAttribute('data-community-publish-toggle')) {
-        if (!build.archetypeId) return toast('Select an archetype before publishing.');
-        const openingPublisher = !ui.communityPublishOpen;
-        if (openingPublisher) prepareCommunityPublisherDraft();
-        ui.communityPublishOpen = openingPublisher;
-        ui.communityAthletePickerOpen = false;
-        ui.communityPublishError = null;
-        ui.communityTurnstileError = null;
-        if (!ui.communityPublishOpen) {
-          const api = communityApi();
-          ui.communityTurnstileToken = '';
-          try { if (api) api.unmountTurnstile(); } catch (error) {}
-        }
-        return refreshModal();
-      }
+      if (t.id === 'btn-create-build') return showBuilder();
+      if (t.dataset.view === 'community') return showCommunityHome();
       if (t.hasAttribute('data-community-publish-cancel')) {
-        const api = communityApi();
-        ui.communityPublishOpen = false;
-        ui.communityPublishError = null;
-        ui.communityTurnstileToken = '';
-        ui.communityTurnstileError = null;
-        ui.communityAthletePickerOpen = false;
-        try { if (api) api.unmountTurnstile(); } catch (error) {}
-        refreshModal();
-        queueMicrotask(() => {
-          const toggle = $('#community-publish-toggle');
-          if (toggle) toggle.focus({ preventScroll: true });
-        });
-        return;
+        return closeModal();
       }
       if (t.hasAttribute('data-community-athlete-picker-toggle')) {
         ui.communityAthletePickerOpen = !ui.communityAthletePickerOpen;
@@ -2178,6 +2258,7 @@
       }
       if (t.hasAttribute('data-community-copy')) return void copyCommunityBuild(t.dataset.communityCopy);
       if (t.hasAttribute('data-community-delete')) return void removeCommunityBuild(t.dataset.communityDelete);
+      if (t.hasAttribute('data-community-favorite')) return void toggleCommunityFavorite(t.dataset.communityFavorite);
       if (t.id === 'sum-run') return runMaxSum();
       if (t.id === 'sum-all') {
         build.sumExcluded = [];
@@ -2346,6 +2427,7 @@
     });
 
     render();
+    if (ui.view === 'community' && communityConfigured()) void loadCommunityBuilds();
     if (adjustedFromUrl) toast('Shared build adjusted to the current game rules.');
   }
 

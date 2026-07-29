@@ -9,6 +9,8 @@ window.Community = (function (root) {
 
   const AUTHOR_STORAGE_KEY = 'clubsBuilder.community.author.v1';
   const TOKENS_STORAGE_KEY = 'clubsBuilder.community.tokens.v1';
+  const FAVORITE_TOKEN_STORAGE_KEY = 'clubsBuilder.community.favoriteToken.v1';
+  const FAVORITE_IDS_STORAGE_KEY = 'clubsBuilder.community.favorites.v1';
   const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
   const DEFAULT_TIMEOUT_MS = 10000;
   const DEFAULT_TURNSTILE_TIMEOUT_MS = 15000;
@@ -18,6 +20,8 @@ window.Community = (function (root) {
   let turnstileContainer = null;
   let turnstileGeneration = 0;
   let turnstileMountVersion = 0;
+  let favoriteTokenCache = '';
+  let favoriteIdsCache = null;
 
   class CommunityError extends Error {
     constructor(message, options = {}) {
@@ -256,6 +260,57 @@ window.Community = (function (root) {
     delete tokens[safeId];
     writeManageTokens(tokens);
     return true;
+  }
+
+  function favoriteIds() {
+    if (favoriteIdsCache) return favoriteIdsCache;
+    favoriteIdsCache = new Set();
+    const value = storageGet(FAVORITE_IDS_STORAGE_KEY);
+    if (!value) return favoriteIdsCache;
+    try {
+      const parsed = JSON.parse(value);
+      if (!Array.isArray(parsed)) return favoriteIdsCache;
+      parsed.slice(0, 500).forEach((id) => {
+        const safeId = cleanString(id);
+        if (safeId && safeId.length <= 256) favoriteIdsCache.add(safeId);
+      });
+    } catch (error) {}
+    return favoriteIdsCache;
+  }
+
+  function writeFavoriteIds() {
+    const ids = Array.from(favoriteIds()).slice(-500);
+    storageSet(FAVORITE_IDS_STORAGE_KEY, JSON.stringify(ids));
+  }
+
+  function isFavorite(id) {
+    const safeId = cleanString(id);
+    return !!safeId && favoriteIds().has(safeId);
+  }
+
+  function createFavoriteToken() {
+    if (!root.crypto || typeof root.crypto.getRandomValues !== 'function' || typeof root.btoa !== 'function') {
+      throw new CommunityError(
+        'Favorites are not supported by this browser.',
+        { code: 'CRYPTO_UNAVAILABLE' },
+      );
+    }
+    const bytes = root.crypto.getRandomValues(new Uint8Array(32));
+    let binary = '';
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return `cbf_${root.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
+  }
+
+  function favoriteToken() {
+    if (favoriteTokenCache) return favoriteTokenCache;
+    const saved = cleanString(storageGet(FAVORITE_TOKEN_STORAGE_KEY));
+    if (/^cbf_[A-Za-z0-9_-]{43}$/.test(saved)) {
+      favoriteTokenCache = saved;
+      return favoriteTokenCache;
+    }
+    favoriteTokenCache = createFavoriteToken();
+    storageSet(FAVORITE_TOKEN_STORAGE_KEY, favoriteTokenCache);
+    return favoriteTokenCache;
   }
 
   function timeoutMs() {
@@ -507,6 +562,37 @@ window.Community = (function (root) {
     return data == null ? true : data;
   }
 
+  async function setFavorite(id, favorite, options = {}) {
+    const apiUrl = configuredApiUrl();
+    const safeId = cleanString(id);
+    if (!safeId || safeId.length > 256 || typeof favorite !== 'boolean') {
+      throw new CommunityError('This community build is invalid.', { code: 'INVALID_BUILD_ID' });
+    }
+    const data = await request(`${apiUrl}/v1/builds/${encodeURIComponent(safeId)}/favorite`, {
+      method: 'POST',
+      signal: options.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favorite, voterToken: favoriteToken() }),
+    });
+    const favoriteCount = Number(data && data.favoriteCount);
+    if (
+      !data
+      || typeof data.favorited !== 'boolean'
+      || !Number.isSafeInteger(favoriteCount)
+      || favoriteCount < 0
+    ) {
+      throw new CommunityError(
+        'Community Builds returned an unexpected response.',
+        { code: 'INVALID_RESPONSE' },
+      );
+    }
+    const ids = favoriteIds();
+    if (data.favorited) ids.add(safeId);
+    else ids.delete(safeId);
+    writeFavoriteIds();
+    return { favoriteCount, favorited: data.favorited };
+  }
+
   function turnstileLoadTimeoutMs() {
     const configured = Number(config().turnstileLoadTimeoutMs);
     return Number.isFinite(configured) && configured > 0
@@ -737,6 +823,8 @@ window.Community = (function (root) {
     list,
     publish,
     remove,
+    setFavorite,
+    isFavorite,
     getSavedAuthor,
     saveAuthor,
     getManageToken,

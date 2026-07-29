@@ -97,9 +97,10 @@ commit and push the changes, then wait for GitHub Pages to update.
 
 ## Final verification
 
-1. Open **Community Builds**. The "Setup required" screen should disappear.
-2. Open a build, click **Publish current build**, enter your public and athlete
-   names, select the card metadata and complete the verification.
+1. Open the site. Community Builds should be the home page and the "Setup
+   required" screen should disappear.
+2. Click **Create Build**, configure a build, click **Publish build**, enter your
+   public and athlete names, select the card metadata and complete verification.
 3. Leave the optional build name empty and confirm that it falls back to the
    athlete name.
 4. Reopen the publisher: the saved public name should no longer need to be
@@ -108,12 +109,14 @@ commit and push the changes, then wait for GitHub Pages to update.
    rarity, league, club and nation, and open the correct build.
 6. In the same browser, the publication should show **Delete**. In another
    browser, it should be read-only.
+7. Favorite a build and confirm that the shared count increases. Reload the page
+   and confirm that the same browser still shows the build as favorited.
 
-The remembered name and deletion credentials are stored in `localStorage`. If
-browser data is cleared, the delete button disappears. In that case, you can
-still hide or delete the row through the Supabase administration panel. To
-moderate without deleting, change `status` to `hidden` in the
-`community_builds` table.
+The remembered name, deletion credentials, anonymous favorite token, and local
+favorite state are stored in `localStorage`. If browser data is cleared, the
+delete button and local favorite state disappear. In that case, you can still
+hide or delete the row through the Supabase administration panel. To moderate
+without deleting, change `status` to `hidden` in the `community_builds` table.
 
 API, security, and local testing details are documented in
 [COMMUNITY_SETUP_BACKEND.md](COMMUNITY_SETUP_BACKEND.md).

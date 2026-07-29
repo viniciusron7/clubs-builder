@@ -135,6 +135,60 @@ test('list uses the configured collection endpoint and normalizes pagination', a
   );
 });
 
+test('favorites use one persistent browser token and keep local state in sync', async () => {
+  const calls = [];
+  const storage = localStorageFake();
+  let count = 6;
+  const context = createContext({
+    localStorage: storage,
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      const body = JSON.parse(options.body);
+      count += body.favorite ? 1 : -1;
+      return response(200, { favoriteCount: count, favorited: body.favorite });
+    },
+  });
+  context.crypto = {
+    getRandomValues(array) {
+      array.fill(7);
+      return array;
+    },
+  };
+  context.btoa = (value) => Buffer.from(value, 'binary').toString('base64');
+
+  assert.equal(context.Community.isFavorite('build-42'), false);
+  const added = await context.Community.setFavorite('build-42', true);
+  assert.deepEqual(JSON.parse(JSON.stringify(added)), { favoriteCount: 7, favorited: true });
+  assert.equal(context.Community.isFavorite('build-42'), true);
+  assert.equal(calls[0].url, 'https://community.example/functions/v1/community-builds/v1/builds/build-42/favorite');
+  assert.equal(calls[0].options.method, 'POST');
+  const firstBody = JSON.parse(calls[0].options.body);
+  assert.match(firstBody.voterToken, /^cbf_[A-Za-z0-9_-]{43}$/);
+  assert.equal(firstBody.favorite, true);
+
+  const removed = await context.Community.setFavorite('build-42', false);
+  assert.deepEqual(JSON.parse(JSON.stringify(removed)), { favoriteCount: 6, favorited: false });
+  assert.equal(context.Community.isFavorite('build-42'), false);
+  assert.equal(JSON.parse(calls[1].options.body).voterToken, firstBody.voterToken);
+  assert.deepEqual(JSON.parse(storage.values.get('clubsBuilder.community.favorites.v1')), []);
+});
+
+test('a failed favorite request does not change local favorite state', async () => {
+  const context = createContext({
+    fetch: async () => response(503, {
+      error: { code: 'storage_unavailable', message: 'Temporarily unavailable.' },
+    }),
+  });
+  context.crypto = { getRandomValues: (array) => array.fill(9) };
+  context.btoa = (value) => Buffer.from(value, 'binary').toString('base64');
+
+  await assert.rejects(
+    context.Community.setFavorite('build-9', true),
+    (error) => error.code === 'storage_unavailable',
+  );
+  assert.equal(context.Community.isFavorite('build-9'), false);
+});
+
 test('publish validates, posts JSON, and saves author and management token', async () => {
   const calls = [];
   const storage = localStorageFake();

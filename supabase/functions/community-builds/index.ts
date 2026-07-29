@@ -7,12 +7,13 @@ import {
 } from "./card-metadata.ts";
 
 const PUBLIC_COLUMNS =
-  "id,author_name,build_name,build_code,athlete_name,ut_player_id,ut_player_ea_id,athlete_image_path,card_rarity_id,league_id,club_id,nation_id,created_at";
+  "id,author_name,build_name,build_code,athlete_name,ut_player_id,ut_player_ea_id,athlete_image_path,card_rarity_id,league_id,club_id,nation_id,favorite_count,created_at";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TIMESTAMP_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 const MANAGEMENT_TOKEN_PATTERN = /^cbm_[A-Za-z0-9_-]{43}$/;
+const FAVORITE_TOKEN_PATTERN = /^cbf_[A-Za-z0-9_-]{43}$/;
 const MAX_REQUEST_BYTES = 24576;
 
 type PublicRow = {
@@ -28,6 +29,7 @@ type PublicRow = {
   league_id: string | null;
   club_id: string | null;
   nation_id: string | null;
+  favorite_count: number;
   created_at: string;
 };
 
@@ -37,6 +39,7 @@ type PublicBuild = {
   buildName: string;
   buildCode: string;
   card: CardMetadata | null;
+  favoriteCount: number;
   createdAt: string;
 };
 
@@ -218,6 +221,7 @@ function publicBuild(row: PublicRow): PublicBuild {
     buildName: row.build_name,
     buildCode: row.build_code,
     card: publicCard(row),
+    favoriteCount: Math.max(0, Number(row.favorite_count) || 0),
     createdAt: row.created_at,
   };
 }
@@ -540,7 +544,7 @@ type RateLimitRow = {
 
 async function consumeRateLimit(
   client: SupabaseClient,
-  action: "challenge" | "publish",
+  action: "challenge" | "publish" | "favorite",
   actorHash: string,
   limit: number,
   windowSeconds: number,
@@ -742,6 +746,82 @@ async function deleteBuild(
   return json(request, { deleted: true }, 200, { "Cache-Control": "no-store" });
 }
 
+type FavoriteResult = {
+  favorite_count: number;
+  favorited: boolean;
+};
+
+async function setBuildFavorite(
+  request: Request,
+  buildId: string,
+): Promise<Response> {
+  if (!UUID_PATTERN.test(buildId)) {
+    throw new ApiError(404, "not_found", "Build not found.");
+  }
+  const body = await readJsonBody(request);
+  if (typeof body.favorite !== "boolean") {
+    throw new ApiError(400, "invalid_input", "favorite must be a boolean.");
+  }
+  const voterToken = typeof body.voterToken === "string"
+    ? body.voterToken.trim()
+    : "";
+  if (!FAVORITE_TOKEN_PATTERN.test(voterToken)) {
+    throw new ApiError(400, "invalid_input", "The favorite token is invalid.");
+  }
+
+  const rateLimitSecret = env("COMMUNITY_RATE_LIMIT_SECRET");
+  const ip = requestIp(request);
+  const client = serviceClient();
+  const requestActorHash = await hmacHex(
+    rateLimitSecret,
+    `favorite-request\u0000${ip}`,
+  );
+  await consumeRateLimit(
+    client,
+    "favorite",
+    requestActorHash,
+    positiveIntegerEnv("COMMUNITY_FAVORITE_LIMIT", 120, 1, 200),
+    positiveIntegerEnv(
+      "COMMUNITY_FAVORITE_WINDOW_SECONDS",
+      3600,
+      60,
+      86400,
+    ),
+    "Too many favorite changes from this network. Please try again later.",
+  );
+
+  const voterHash = await hmacHex(
+    rateLimitSecret,
+    `favorite-voter\u0000${voterToken}`,
+  );
+  const { data, error } = await client.rpc("community_set_build_favorite", {
+    p_build_id: buildId,
+    p_actor_hash: voterHash,
+    p_favorite: body.favorite,
+  });
+  if (error) {
+    console.error("[community-builds] favorite failed", error.code);
+    throw new ApiError(
+      503,
+      "storage_unavailable",
+      "Unable to update the favorite.",
+    );
+  }
+  const result = ((data ?? []) as FavoriteResult[])[0];
+  if (!result) {
+    throw new ApiError(404, "not_found", "Build not found.");
+  }
+  return json(
+    request,
+    {
+      favoriteCount: Math.max(0, Number(result.favorite_count) || 0),
+      favorited: result.favorited === true,
+    },
+    200,
+    { "Cache-Control": "no-store" },
+  );
+}
+
 export async function handler(request: Request): Promise<Response> {
   try {
     if (!originAllowed(request)) {
@@ -772,6 +852,11 @@ export async function handler(request: Request): Promise<Response> {
     }
     if (request.method === "POST" && collectionRoute) {
       return await publishBuild(request);
+    }
+
+    if (request.method === "POST") {
+      const match = /^\/(?:v1\/)?builds\/([^/]+)\/favorite$/u.exec(suffix);
+      if (match) return await setBuildFavorite(request, match[1]);
     }
 
     if (request.method === "DELETE") {

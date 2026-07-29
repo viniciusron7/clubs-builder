@@ -2469,6 +2469,106 @@ body::before {
 /* ============================================================================
  * Community Builds
  * ========================================================================== */
+#builder-app[hidden],
+#community-home[hidden] {
+  display: none !important;
+}
+
+.community-home {
+  min-height: calc(100dvh - 3.5rem);
+}
+
+.community-home-shell {
+  width: min(100%, 100rem);
+  margin-inline: auto;
+  padding: clamp(1.25rem, 3vw, 3.5rem) clamp(.9rem, 3vw, 2.5rem) 4rem;
+}
+
+.community-home-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 2rem;
+  margin-bottom: clamp(1.4rem, 3vw, 2.6rem);
+  padding-bottom: clamp(1.15rem, 2.4vw, 2rem);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.community-home-header h1 {
+  margin-top: .25rem;
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  font-size: clamp(2.45rem, 5vw, 5.25rem);
+  font-weight: 500;
+  letter-spacing: -.045em;
+  line-height: .86;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.community-home-header p {
+  max-width: 42rem;
+  margin-top: .85rem;
+  color: var(--color-text-muted);
+  font-size: clamp(.82rem, 1.25vw, 1rem);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.community-create-build {
+  display: inline-flex;
+  min-height: 3.15rem;
+  align-items: center;
+  justify-content: center;
+  gap: .8rem;
+  padding: .72rem 1.15rem;
+  border: 2px solid var(--color-accent-primary);
+  border-radius: .16rem;
+  color: #06150f;
+  background: var(--color-accent-primary);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: .065em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.community-create-build:hover {
+  border-color: var(--color-accent-primary-light);
+  background: var(--color-accent-primary-hover);
+  transform: translateY(-2px);
+}
+
+.community-create-build:active {
+  transform: translateY(0) scale(.985);
+}
+
+.community-create-build span {
+  font-family: var(--font-ui);
+  font-size: 1.2em;
+}
+
+.community-home-loading {
+  display: grid;
+  width: min(100% - 2rem, 96rem);
+  margin-inline: auto;
+  padding-top: 9rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.community-home-loading span {
+  min-height: 24rem;
+  border-radius: .75rem;
+  background:
+    linear-gradient(100deg, transparent 30%, rgba(255,255,255,.045) 50%, transparent 70%),
+    var(--color-bg-panel);
+  background-size: 220% 100%;
+  animation: community-shimmer 1.25s ease-in-out infinite;
+}
+
 #modal-box[data-modal-kind="community"] {
   max-width: min(96vw, 84rem);
 }
@@ -3049,6 +3149,34 @@ body::before {
   background: color-mix(in srgb, rgb(var(--color-state-error)) 17%, var(--color-bg-card));
 }
 
+.community-card-actions .community-favorite {
+  min-width: 3.15rem;
+  gap: .3rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.community-card-actions .community-favorite > span {
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  transform: translateY(-.03rem);
+}
+
+.community-card-actions .community-favorite strong {
+  font-size: .7rem;
+}
+
+.community-card-actions .community-favorite.is-favorite {
+  border-color: color-mix(in srgb, var(--color-accent-primary) 45%, var(--color-border-primary));
+  color: var(--color-accent-primary-light);
+  background: color-mix(in srgb, var(--color-accent-primary) 10%, var(--color-bg-card));
+}
+
+.community-card-actions .community-favorite.is-favorite > span {
+  color: var(--color-accent-primary);
+}
+
 .community-card-actions button:disabled {
   opacity: .5;
   cursor: wait;
@@ -3166,6 +3294,25 @@ body::before {
 }
 
 @media (max-width: 560px) {
+  .community-home-header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 1.25rem;
+  }
+
+  .community-create-build {
+    width: 100%;
+  }
+
+  .community-home-loading {
+    padding-top: 5rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .community-home-loading span:not(:first-child) {
+    display: none;
+  }
+
   #modal-box[data-modal-kind="community"] {
     max-height: 96dvh;
   }
