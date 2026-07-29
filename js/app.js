@@ -590,6 +590,30 @@
     };
   }
 
+  function defaultCommunityRarityId() {
+    return catalogOptionId('rarities', '', (name) => name.trim() === 'rare');
+  }
+
+  function ensureCommunityPublishingPosition() {
+    if (!build.archetypeId || (build.positions || []).length) return;
+    const derived = C.derive(build);
+    if (!derived.arch) return;
+    const candidates = derived.arch.position === 'GK' ? ['GK'] : OUTFIELD_POSITIONS;
+    const overalls = C.overallMapForValues(candidates, derived, null);
+    const best = candidates.reduce((winner, position) => (
+      winner == null || overalls[position] > overalls[winner] ? position : winner
+    ), null);
+    if (!best) return;
+    const outcome = commitBuildChange(() => { build.positions = [best]; }, { render: false, notice: false });
+    if (outcome.changed) syncUrl();
+  }
+
+  function prepareCommunityPublisherDraft() {
+    ensureCommunityPublishingPosition();
+    ui.communityAthleteName = '';
+    ui.communityRarityId = defaultCommunityRarityId();
+  }
+
   function communityPlaystyles(info) {
     if (!info || !info.derived) return [];
     const result = [];
@@ -684,9 +708,7 @@
   function setCommunityAthlete(player, resetIdentity = true) {
     if (!player) return false;
     ui.communityAthleteId = String(player.id);
-    ui.communityAthleteName = BC.safeCardName(player.cardName || player.name);
     if (resetIdentity) {
-      ui.communityRarityId = catalogOptionId('rarities', player.rarityId, (name) => name.includes('gold'));
       const leagues = publishableLeagues();
       const requestedLeague = leagues.find((league) => catalogId(league) === String(player.leagueId));
       ui.communityLeagueId = requestedLeague ? catalogId(requestedLeague) : (leagues[0] ? catalogId(leagues[0]) : '');
@@ -702,7 +724,7 @@
     const player = communityPlayerById(ui.communityAthleteId);
     return {
       version: 1,
-      athleteName: BC.safeCardName(ui.communityAthleteName || (player && (player.cardName || player.name))),
+      athleteName: BC.safeCardName(ui.communityAthleteName, 'PLAYER'),
       utPlayerId: player ? String(player.id) : String(ui.communityAthleteId || ''),
       utPlayerEaId: player ? String(player.eaId) : '',
       athleteImagePath: player && (player.playerImagePath || player.cardImagePath) || '',
@@ -716,6 +738,7 @@
   function ensureCommunityCardDraft() {
     const info = currentCommunityInfo();
     const key = build.archetypeId ? S.encode(build) : '';
+    if (ui.utCatalog && !ui.communityRarityId) ui.communityRarityId = defaultCommunityRarityId();
     if (ui.utPlayers && ui.utCatalog && key && ui.communityAutoMatchKey !== key) {
       setCommunityAthlete(closestCommunityAthlete(info));
       ui.communityAutoMatchKey = key;
@@ -1213,6 +1236,7 @@
       ui.communityLoaded = true;
       ui.communityPublishOpen = false;
       ui.communityBuildName = '';
+      ui.communityAthleteName = '';
       ui.communityAuthorCached = true;
       ui.communityTurnstileToken = '';
       ui.communityTurnstileError = null;
@@ -1989,6 +2013,7 @@
   }
   function openCommunityPublisher(opener) {
     if (!build.archetypeId) return toast('Select an archetype before publishing.');
+    prepareCommunityPublisherDraft();
     ui.communityPublishOpen = true;
     ui.communityPublishError = null;
     ui.communityTurnstileToken = '';
@@ -2076,7 +2101,9 @@
       if (t.id === 'btn-publish-build') return openCommunityPublisher(t);
       if (t.hasAttribute('data-community-publish-toggle')) {
         if (!build.archetypeId) return toast('Select an archetype before publishing.');
-        ui.communityPublishOpen = !ui.communityPublishOpen;
+        const openingPublisher = !ui.communityPublishOpen;
+        if (openingPublisher) prepareCommunityPublisherDraft();
+        ui.communityPublishOpen = openingPublisher;
         ui.communityAthletePickerOpen = false;
         ui.communityPublishError = null;
         ui.communityTurnstileError = null;

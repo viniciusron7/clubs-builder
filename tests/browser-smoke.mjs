@@ -557,10 +557,20 @@ await send('Page.addScriptToEvaluateOnNewDocument', {
     };
   })();`,
 });
+const communityPublisherCode = Buffer.from(JSON.stringify({
+  v: 2,
+  a: 'mid_creator',
+  l: 100,
+  h: 180,
+  w: 75,
+  t: { vision: 99, short_passing: 96, long_passing: 96 },
+  po: [],
+})).toString('base64url');
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-await send('Page.reload', { ignoreCache: true });
+await send('Page.navigate', { url: `${appUrl}?b=${communityPublisherCode}` });
 await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('#btn-community-builds[data-modal="community"]')`);
 errors.length = 0;
+assert.deepEqual(await evaluate(`Share.fromUrl().positions`), []);
 await click('#btn-community-builds');
 await waitFor(`document.querySelectorAll('.community-card').length === 1`);
 await waitFor(`[...document.querySelectorAll('.community-card :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
@@ -588,24 +598,59 @@ await click('[data-modal-close]');
 await click('#btn-publish-build');
 assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'community');
 assert.equal(await evaluate(`!!document.querySelector('#community-publish-form')`), true);
-await waitFor(`document.querySelector('.community-publish-preview .fc-card') && document.querySelector('#community-athlete-name').value.length > 0`);
+await waitFor(`document.querySelector('.community-publish-preview .fc-card')
+  && document.querySelector('#community-athlete-name').value === ''
+  && document.querySelector('#community-rarity option:checked')
+  && document.querySelector('#community-rarity option:checked').textContent.trim() === 'Rare'`);
 await waitFor(`[...document.querySelectorAll('.community-publish-preview :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
   .length >= 5
   && [...document.querySelectorAll('.community-publish-preview :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
     .every((image) => image.complete && image.naturalWidth > 0)`, 20000);
+const automaticPublisherPosition = await evaluate(`(() => {
+  const build = Share.fromUrl();
+  const derived = Calc.derive(build);
+  const positions = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
+  const overalls = Calc.overallMapForValues(positions, derived, null);
+  const best = positions.reduce((winner, position) => overalls[position] > overalls[winner] ? position : winner);
+  return { selected: build.positions, best, overalls };
+})()`);
+assert.deepEqual(automaticPublisherPosition.selected, [automaticPublisherPosition.best]);
+assert.equal(await evaluate(`document.querySelector('#community-athlete-name').value`), '');
+assert.equal(await evaluate(`document.querySelector('.community-publish-preview .fc-card-name').textContent.trim()`), 'PLAYER');
+assert.equal(await evaluate(`document.querySelector('#community-rarity option:checked').textContent.trim()`), 'Rare');
 assert.equal(await evaluate(`!!document.querySelector('[data-community-athlete-picker-toggle]')`), true);
 await click('[data-community-athlete-picker-toggle]');
 await waitFor(`document.querySelectorAll('[data-community-athlete]').length > 0`);
 assert.equal(await evaluate(`!!document.querySelector('#community-athlete-search')`), true);
-await click('[data-community-athlete-picker-close]');
+await click('[data-community-athlete]:not(.is-selected)');
+await waitFor(`!document.querySelector('.community-athlete-picker')`);
+assert.equal(await evaluate(`document.querySelector('#community-athlete-name').value`), '');
+assert.equal(await evaluate(`document.querySelector('#community-rarity option:checked').textContent.trim()`), 'Rare');
+const manuallySelectedRarity = await evaluate(`(() => {
+  const select = document.querySelector('#community-rarity');
+  const option = [...select.options].find((item) => item.textContent.trim() !== 'Rare');
+  select.value = option.value;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  return { value: option.value, label: option.textContent.trim() };
+})()`);
+await waitFor(`document.querySelector('#community-rarity').value === ${JSON.stringify(manuallySelectedRarity.value)}`);
+await click('[data-community-athlete-picker-toggle]');
+await waitFor(`document.querySelectorAll('[data-community-athlete]').length > 0`);
+await click('[data-community-athlete]:not(.is-selected)');
+await waitFor(`!document.querySelector('.community-athlete-picker')`);
+assert.equal(await evaluate(`document.querySelector('#community-rarity').value`), manuallySelectedRarity.value);
+assert.equal(await evaluate(`document.querySelector('#community-rarity option:checked').textContent.trim()`), manuallySelectedRarity.label);
 await waitFor(`document.querySelector('#community-publish-submit') && !document.querySelector('#community-publish-submit').disabled`);
 await evaluate(`(() => {
   const author = document.querySelector('#community-author');
+  const athlete = document.querySelector('#community-athlete-name');
   const name = document.querySelector('#community-build-name');
   author.value = 'Vinicius';
+  athlete.value = 'Vinicius';
   name.value = 'GK community test';
   author.dispatchEvent(new Event('input', { bubbles: true }));
   name.dispatchEvent(new Event('input', { bubbles: true }));
+  athlete.dispatchEvent(new Event('input', { bubbles: true }));
 })()`);
 await screenshot('/tmp/clubs-builder-community-publisher.png');
 await click('#community-publish-submit');
@@ -616,11 +661,13 @@ await waitFor(`[...document.querySelectorAll('.community-card :is(.fc-card-frame
     .every((image) => image.complete && image.naturalWidth > 0)`, 20000);
 assert.equal(await evaluate(`Community.getSavedAuthor()`), 'Vinicius');
 assert.equal(await evaluate(`document.querySelectorAll('[data-community-delete]').length`), 1);
-assert.equal(await evaluate(`window.__communityMock.items[0].card.athleteName.length <= 15`), true);
+assert.equal(await evaluate(`window.__communityMock.items[0].card.athleteName`), 'Vinicius');
 assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card').length`), 2);
 await click('[data-community-publish-toggle]');
 assert.equal(await evaluate(`document.querySelector('#community-author')`), null);
 assert.match(await evaluate(`document.querySelector('.community-saved-author').innerText`), /Vinicius/);
+assert.equal(await evaluate(`document.querySelector('#community-athlete-name').value`), '');
+assert.equal(await evaluate(`document.querySelector('#community-rarity option:checked').textContent.trim()`), 'Rare');
 await click('[data-community-publish-cancel]');
 await screenshot('/tmp/clubs-builder-community-desktop.png');
 await evaluate(`window.confirm = () => true`);
