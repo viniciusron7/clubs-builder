@@ -600,6 +600,7 @@
       result.push({
         id: slot.playStyleId,
         name: psName(slot.playStyleId),
+        signature: true,
         plus: !!slot.isPlus,
         icon: `playstyles/${slot.isPlus ? 'plus/' : ''}${psIcon(slot.playStyleId)}`,
       });

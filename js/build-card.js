@@ -15,6 +15,7 @@ window.BuildCard = (function () {
     ['defending', 'DEF'],
     ['physical', 'PHY'],
   ]);
+  let renderSequence = 0;
 
   const esc = (value) => String(value == null ? '' : value).replace(
     /[&<>"']/g,
@@ -126,6 +127,20 @@ window.BuildCard = (function () {
     return '';
   }
 
+  function rarityPaletteIndex(rarity) {
+    if (!rarity) return 0;
+    const paths = Array.isArray(rarity.imagePaths) ? rarity.imagePaths : [];
+    const selected = singleLine(rarity.imagePath);
+    const exact = paths.findIndex((path) => singleLine(path) === selected);
+    if (exact >= 0) return exact;
+    const level = selected.match(/rarities-level-(\d+)-/i);
+    return level && +level[1] > 0 ? Math.max(0, +level[1] - 1) : 0;
+  }
+
+  function indexedColor(item, key, index, fallback = '') {
+    return colorAt(item, key, index) || colorAt(item, key, 0) || colorCandidate(item, [key]) || fallback;
+  }
+
   function rarityTheme(rarity) {
     const name = itemName(rarity, 'Gold').toLowerCase();
     let surface = '#d8c879';
@@ -151,14 +166,19 @@ window.BuildCard = (function () {
       surface = '#4a1769'; border = '#ff82f3'; ink = '#fff'; accent = '#63f1c5';
     }
 
-    const text = safeColor(colorCandidate(rarity, ['textColor', 'text', 'foreground']), ink);
+    const paletteIndex = rarityPaletteIndex(rarity);
+    const text = safeColor(indexedColor(rarity, 'textColor', paletteIndex), ink);
+    const fill = safeColor(indexedColor(rarity, 'lineColor', paletteIndex), surface);
     return {
-      fill: safeColor(colorCandidate(rarity, ['backgroundColor', 'background', 'primary', 'dominantColor']), surface),
-      border: safeColor(colorCandidate(rarity, ['borderColor', 'border', 'secondary', 'lineColor']), border),
+      paletteIndex,
+      fill,
+      border: safeColor(indexedColor(rarity, 'lineColor', paletteIndex), border),
       text,
-      overall: safeColor(colorCandidate(rarity, ['overallColor']) || colorAt(rarity, 'textColor', 0), text),
-      position: safeColor(colorAt(rarity, 'textColor', 1), text),
-      accent: safeColor(colorCandidate(rarity, ['accentColor', 'accent', 'tertiary']), accent),
+      overall: safeColor(indexedColor(rarity, 'overallColor', paletteIndex), text),
+      position: safeColor(indexedColor(rarity, 'positionColor', paletteIndex), text),
+      accent: fill || safeColor(colorCandidate(rarity, ['accentColor', 'accent', 'tertiary']), accent),
+      shadow: safeColor(indexedColor(rarity, 'shadowColor', paletteIndex), '#000000'),
+      bright: !!(rarity && rarity.isBrightColorScheme),
     };
   }
 
@@ -204,8 +224,13 @@ window.BuildCard = (function () {
     };
   }
 
-  function identityBadge(item, fallback, className) {
-    const image = itemAsset(item, 80);
+  function identityBadge(item, fallback, className, bright = false) {
+    const alternatePath = bright && item && (
+      item.imageLightPath
+      || item.lightImagePath
+      || item.logoLightPath
+    );
+    const image = alternatePath ? assetUrl(alternatePath, 80) : itemAsset(item, 80);
     const name = itemName(item, fallback);
     if (image) {
       return `<span class="fc-card-identity ${esc(className)}" title="${esc(name)}"><img src="${esc(image)}" alt="${esc(name)}" loading="lazy" referrerpolicy="no-referrer" /></span>`;
@@ -213,16 +238,61 @@ window.BuildCard = (function () {
     return `<span class="fc-card-identity ${esc(className)}" title="${esc(name)}"><b>${esc((name || fallback).slice(0, 3).toUpperCase())}</b></span>`;
   }
 
-  function renderPlaystyles(playstyles) {
-    const items = (Array.isArray(playstyles) ? playstyles : []).filter((item) => item && item.icon).slice(0, 13);
-    if (!items.length) return '<span class="fc-card-no-playstyles">No PlayStyles</span>';
-    return items.map((item) => `
-      <span class="fc-card-playstyle ${item.plus ? 'is-plus' : ''}" title="${esc(item.name || 'PlayStyle')}${item.plus ? '+' : ''}">
-        <img src="${esc(item.icon)}" alt="" loading="lazy" />
-      </span>`).join('');
+  function playstyleGlyph(item) {
+    const localIcon = singleLine(item && item.icon).replace('/plus/', '/');
+    return /^(?:\.\/)?playstyles\/[a-z0-9-]+\.png$/i.test(localIcon) ? localIcon : '';
+  }
+
+  function renderPlaystyles(playstyles, serial) {
+    const source = (Array.isArray(playstyles) ? playstyles : []).filter((item) => item && item.icon);
+    const signatures = source.filter((item) => item.signature);
+    const items = (signatures.length ? signatures : source.filter((item) => item.plus)).slice(0, 4);
+    return items.map((item, index) => {
+      const glyph = playstyleGlyph(item);
+      if (!glyph) return '';
+      const locked = !item.plus;
+      const filterId = `fc-playstyle-${serial}-${index}`;
+      return `
+        <span class="fc-card-playstyle ${locked ? 'is-locked' : 'is-plus'}"
+          title="${esc(item.name || 'PlayStyle')}${item.plus ? '+' : ''}">
+          <svg class="fc-card-playstyle-diamond" viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+            <path d="M12.813,104.953L68.157,21.862H188.143l55.045,83.091L128,235.138Z" />
+          </svg>
+          <svg class="fc-card-playstyle-glyph" viewBox="0 0 70 70" aria-hidden="true" focusable="false">
+            <defs>
+              <filter id="${filterId}" color-interpolation-filters="sRGB">
+                <feColorMatrix in="SourceGraphic" type="matrix"
+                  values="0 0 0 0 0
+                          0 0 0 0 0
+                          0 0 0 0 0
+                         -0.2126 -0.7152 -0.0722 1 0" result="glyph-mask" />
+                <feFlood flood-color="var(--fc-playstyle-ink)" result="glyph-color" />
+                <feComposite in="glyph-color" in2="glyph-mask" operator="in" />
+              </filter>
+            </defs>
+            <image href="${esc(glyph)}" width="70" height="70" filter="url(#${filterId})" />
+          </svg>
+        </span>`;
+    }).join('');
+  }
+
+  function classifyAthleteArt(image) {
+    const wrapper = image && image.closest && image.closest('.fc-card-art');
+    if (!wrapper || !image.naturalWidth || !image.naturalHeight) return;
+    wrapper.classList.toggle('is-dynamic', image.naturalHeight / image.naturalWidth > 1.15);
+    wrapper.classList.add('is-ready');
+  }
+
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('load', (event) => {
+      if (event.target && event.target.matches && event.target.matches('.fc-card-art img')) {
+        classifyAthleteArt(event.target);
+      }
+    }, true);
   }
 
   function render(options = {}) {
+    const serial = ++renderSequence;
     const info = options.info || {};
     const metadata = normalizedMetadata(options.metadata);
     const catalog = options.catalog || {};
@@ -231,7 +301,7 @@ window.BuildCard = (function () {
     const club = catalogItem(catalog, 'clubs', metadata.clubId);
     const nation = catalogItem(catalog, 'nations', metadata.nationId);
     const theme = rarityTheme(rarity);
-    const positions = Array.isArray(info.positions) ? info.positions.slice(0, 4) : [];
+    const positions = Array.isArray(info.positions) ? info.positions.slice(0, 5) : [];
     const primary = primaryPosition(info);
     const alternatives = positions.filter((position) => position !== primary);
     const image = assetUrl(metadata.athleteImagePath, 420);
@@ -247,15 +317,17 @@ window.BuildCard = (function () {
       `--fc-overall:${theme.overall}`,
       `--fc-position:${theme.position}`,
       `--fc-accent:${theme.accent}`,
+      `--fc-shadow:${theme.shadow}`,
     ].join(';');
     const accessibleName = `${metadata.athleteName}, ${cardOverall(info)} overall, ${positions.join(', ') || primary}`;
 
     return `
-      <div class="fc-card" data-rarity="${esc(itemName(rarity, metadata.rarityId || 'custom'))}" style="${esc(style)}"
+      <div class="fc-card" data-rarity="${esc(itemName(rarity, metadata.rarityId || 'custom'))}"
+        data-rarity-tier="${theme.paletteIndex}" style="${esc(style)}"
         role="img" aria-label="${esc(accessibleName)}">
         <div class="fc-card-surface">
           ${frame ? `<img class="fc-card-frame" src="${esc(frame)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ''}
-          <div class="fc-card-art">
+          <div class="fc-card-art is-dynamic">
             ${image
               ? `<img src="${esc(image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
               : '<span class="fc-card-art-placeholder" aria-hidden="true">◇</span>'}
@@ -268,20 +340,20 @@ window.BuildCard = (function () {
           <div class="fc-card-alt-positions" aria-label="Alternative positions">
             ${alternatives.map((position) => `<span>${esc(position)}</span>`).join('')}
           </div>
-          <div class="fc-card-side-meta" aria-label="Strong foot, Weak Foot and Skill Moves">
+          <div class="fc-card-side-meta" aria-label="Strong foot, Skill Moves and Weak Foot">
             <span>R</span>
-            <span><b>${weakFoot}</b><i>★</i><b>${skillMoves}</b></span>
+            <span><b>${skillMoves}</b><i>★</i><b>${weakFoot}</b></span>
           </div>
           <div class="fc-card-stats">
             ${stats.map((stat) => `<span><small>${stat.label}</small><b>${stat.value || '—'}</b></span>`).join('')}
           </div>
           <div class="fc-card-identities">
-            ${identityBadge(nation, metadata.nationId || 'NAT', 'is-nation')}
-            ${identityBadge(league, metadata.leagueId || 'LG', 'is-league')}
-            ${identityBadge(club, metadata.clubId || 'CLB', 'is-club')}
+            ${identityBadge(nation, metadata.nationId || 'NAT', 'is-nation', false)}
+            ${identityBadge(league, metadata.leagueId || 'LG', 'is-league', theme.bright)}
+            ${identityBadge(club, metadata.clubId || 'CLB', 'is-club', theme.bright)}
           </div>
-          <div class="fc-card-playstyles" aria-label="PlayStyles">
-            ${renderPlaystyles(options.playstyles)}
+          <div class="fc-card-playstyles" aria-label="Signature PlayStyles">
+            ${renderPlaystyles(options.playstyles, serial)}
           </div>
         </div>
       </div>`;

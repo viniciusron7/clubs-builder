@@ -36,6 +36,34 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Cruyff Sans Card Bold";
+  src: url("https://assets.fut.gg/ts/public-assets/fonts/cruyff/CruyffSans-Bold.ecd5078c.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cruyff Card Numbers";
+  src:
+    url("https://assets.fut.gg/ts/public-assets/fonts/cruyff/numbers-medium-webfont.woff2") format("woff2"),
+    url("https://assets.fut.gg/ts/public-assets/fonts/cruyff/numbers-medium-webfont.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cruyff Card Numbers Bold";
+  src:
+    url("https://assets.fut.gg/ts/public-assets/fonts/cruyff/numbers-bold-webfont.woff2") format("woff2"),
+    url("https://assets.fut.gg/ts/public-assets/fonts/cruyff/numbers-bold-webfont.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 /* sliders */
 input[type="range"] {
   accent-color: var(--color-btn-blue);
@@ -3240,6 +3268,7 @@ body::before {
   --fc-overall: var(--fc-ink);
   --fc-position: var(--fc-ink);
   --fc-accent: #725e1f;
+  --fc-shadow: #000;
   position: relative;
   width: min(100%, 16rem);
   aspect-ratio: .71527778;
@@ -3248,7 +3277,7 @@ body::before {
   overflow: visible;
   color: var(--fc-ink);
   background: transparent;
-  filter: drop-shadow(0 .9rem 1.3rem rgba(0, 0, 0, .3));
+  filter: drop-shadow(0 .9rem 1.3rem color-mix(in srgb, var(--fc-shadow) 30%, transparent));
   isolation: isolate;
 }
 
@@ -3284,21 +3313,23 @@ body::before {
   font-family: "Cruyff Sans Condensed", var(--font-display);
   line-height: 1;
   text-align: center;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 .fc-card-rating strong {
+  font-family: "Cruyff Card Numbers Bold", "Cruyff Sans Condensed", var(--font-display);
   font-size: 1.73em;
-  font-weight: 700;
-  line-height: .91;
-  letter-spacing: -.035em;
+  font-weight: 400;
+  line-height: .91em;
+  letter-spacing: 0;
 }
 
 .fc-card-rating span {
-  margin-top: -.04em;
+  display: block;
+  margin-top: -.07em;
   color: var(--fc-position);
   font-size: .83em;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -3326,31 +3357,35 @@ body::before {
   background: var(--fc-fill);
   font-family: "Cruyff Sans Condensed", var(--font-display);
   font-size: .73em;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1;
 }
 
 .fc-card-art {
   position: absolute;
   z-index: 2;
-  top: 2%;
+  top: 17.4%;
   left: 50%;
-  width: 98%;
-  height: 65%;
+  width: 64.32687%;
   transform: translateX(-50%);
 }
 
+.fc-card-art.is-dynamic {
+  top: 2%;
+  left: 50%;
+  width: 98%;
+}
+
 .fc-card-art img {
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center bottom;
+  height: auto;
 }
 
 .fc-card-art-placeholder {
   display: grid;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1;
   place-items: center;
   color: var(--fc-accent);
   font-family: var(--font-display);
@@ -3365,9 +3400,9 @@ body::before {
   left: 50%;
   width: 75.2%;
   overflow: hidden;
-  font-family: "Cruyff Sans Condensed", var(--font-display);
+  font-family: "Cruyff Sans Card Bold", "Cruyff Sans", var(--font-ui);
   font-size: 1em;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1;
   letter-spacing: 0;
   text-align: center;
@@ -3381,9 +3416,10 @@ body::before {
   z-index: 4;
   top: 71.6%;
   left: 50%;
-  display: grid;
+  display: flex;
   width: 68.8%;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: space-between;
   transform: translateX(-50%);
 }
@@ -3395,9 +3431,9 @@ body::before {
 }
 
 .fc-card-stats b {
-  font-family: "Cruyff Sans Condensed", var(--font-display);
+  font-family: "Cruyff Card Numbers", "Cruyff Sans Condensed", var(--font-display);
   font-size: .92em;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1;
 }
 
@@ -3405,7 +3441,7 @@ body::before {
   margin-bottom: .2em;
   font-family: "Cruyff Sans Condensed", var(--font-display);
   font-size: .58em;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -3424,15 +3460,15 @@ body::before {
 
 .fc-card-identity {
   display: grid;
-  width: 1.2em;
-  height: 1em;
   flex: 0 0 auto;
   place-items: center;
 }
 
 .fc-card-identity img {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 1.2em;
+  max-height: 1em;
   object-fit: contain;
 }
 
@@ -3454,7 +3490,7 @@ body::before {
   color: var(--fc-ink);
   font-family: "Cruyff Sans Condensed", var(--font-display);
   font-size: .73em;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1;
   text-align: center;
   transform: translateY(-50%);
@@ -3479,7 +3515,7 @@ body::before {
 .fc-card-side-meta b {
   width: .52em;
   font-size: 1em;
-  font-weight: 700;
+  font-weight: 500;
   text-align: center;
 }
 
@@ -3495,45 +3531,55 @@ body::before {
 .fc-card-playstyles {
   position: absolute;
   z-index: 5;
-  top: 88.7%;
-  left: 50%;
+  top: 57.2%;
+  left: 9.8%;
   display: flex;
-  width: 72%;
-  min-width: 0;
-  min-height: 1.4em;
+  width: 1.6em;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: .08em;
-  overflow: hidden;
-  transform: translateX(-50%);
+  gap: 0;
+  transform: translate(-50%, -50%);
 }
 
 .fc-card-playstyle {
-  display: grid;
-  width: 1.12em;
-  height: 1.12em;
-  flex: 0 1 1.12em;
-  place-items: center;
-  border: .06em solid transparent;
-  border-radius: 50%;
+  --fc-playstyle-fill: var(--fc-fill);
+  --fc-playstyle-ink: var(--fc-ink);
+  position: relative;
+  display: block;
+  width: 1.6em;
+  height: 1.6em;
+  flex: 0 0 1.6em;
 }
 
-.fc-card-playstyle.is-plus {
-  border-color: var(--fc-accent);
+.fc-card-playstyle.is-locked {
+  --fc-playstyle-fill: #c5c9cd;
+  --fc-playstyle-ink: #555b61;
 }
 
-.fc-card-playstyle img {
+.fc-card-playstyle-diamond {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  overflow: visible;
 }
 
-.fc-card-no-playstyles {
-  color: var(--fc-ink);
-  font-size: .45em;
-  font-weight: 800;
-  opacity: .55;
-  text-transform: uppercase;
+.fc-card-playstyle path {
+  fill: var(--fc-playstyle-fill);
+  stroke: var(--fc-playstyle-ink);
+  stroke-width: 8;
+  stroke-linejoin: round;
+}
+
+.fc-card-playstyle-glyph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 1.3em;
+  height: 1.3em;
+  overflow: visible;
+  transform: translate(-50%, -65%);
 }
 
 /* Publisher */
