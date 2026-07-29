@@ -74,9 +74,10 @@ python3 -m http.server 4173 --bind 0.0.0.0
   deletion credential for each publication. The optional backend uses Supabase
   and Cloudflare Turnstile with RLS, validation, CORS, and publication limits.
 
-The 4 tabs (PlayStyles / Specializations / Body / Community Builds) open
-**modals**. The main area displays attributes and the selected attribute's
-detail panel.
+The three configuration tabs (PlayStyles / Specializations / Body) open
+**modals**. Community Builds has a dedicated action in the summary bar, while
+Publish Build is available as a separate call to action in the tools bar. The
+main area displays attributes and the selected attribute's detail panel.
 
 ## Structure
 

@@ -1,8 +1,7 @@
 /* ============================================================================
  * app.js — FC 26 Pro Clubs Builder controller (state + UI + events).
  * Faithful to the original layout: attributes are always visible with the detail
- * panel on the right; the tabs (Body / PlayStyles / Specializations /
- * Community Builds) open MODALS.
+ * panel on the right; the configuration tabs and Community Builds actions open MODALS.
  * Depends on window.DATA, window.Calc, and window.Share.
  * ========================================================================== */
 (function () {
@@ -159,6 +158,10 @@
     }).join('');
     $('#summary-bar').innerHTML = `
       <div class="summary-player flex items-center gap-2.5">${archInfo}</div>
+      <button id="btn-community-builds" type="button" data-modal="community" aria-haspopup="dialog"
+        class="summary-community" aria-label="Browse Community Builds">
+        <span>Community Builds</span>
+      </button>
       <div class="summary-physique flex items-center gap-4">
         <div class="summary-metric text-center leading-tight">
           <div class="summary-label text-xs text-t-muted uppercase">Height / Weight</div>
@@ -262,13 +265,19 @@
       ['playStyles', L.tabs.playStyles, true],
       ['specializations', L.tabs.specializations, true],
       ['body', L.tabs.body, true],
-      ['community', 'Community Builds', false],
     ];
-    $('#tabs').innerHTML = tabs.map(([id, label, requiresBuild]) => {
+    const tabButtons = tabs.map(([id, label, requiresBuild]) => {
       const disabled = requiresBuild && !build.archetypeId;
-      return `<button id="tab-${id}" data-modal="${id}" aria-haspopup="dialog" ${disabled ? 'disabled' : ''} class="builder-tab ${id === 'community' ? 'community-tab' : ''} px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`;
-    }
-    ).join('');
+      return `<button id="tab-${id}" data-modal="${id}" aria-haspopup="dialog" ${disabled ? 'disabled' : ''} class="builder-tab px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`;
+    }).join('');
+    const publishDisabled = !build.archetypeId;
+    $('#tabs').innerHTML = `
+      <div class="builder-tab-list">${tabButtons}</div>
+      <button id="btn-publish-build" type="button" aria-haspopup="dialog" ${publishDisabled ? 'disabled' : ''}
+        class="publish-build-action">
+        <span aria-hidden="true">＋</span>
+        <span>Publish build</span>
+      </button>`;
   }
 
   // -------------------- attributes grid --------------------
@@ -1584,6 +1593,14 @@
     render();
     if (id === 'community' && communityConfigured() && !ui.communityLoaded && !ui.communityLoading) void loadCommunityBuilds();
   }
+  function openCommunityPublisher(opener) {
+    if (!build.archetypeId) return toast('Select an archetype before publishing.');
+    ui.communityPublishOpen = true;
+    ui.communityPublishError = null;
+    ui.communityTurnstileToken = '';
+    ui.communityTurnstileError = null;
+    openModal('community', opener);
+  }
   function closeModal() {
     if (ui.modal === 'community' && ui.communityPublishing) {
       toast('Wait for the publication to finish.');
@@ -1635,7 +1652,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -1659,6 +1676,7 @@
       }
       if (t.id === 'btn-maxsum') return openModal('maxsum', t);
       if (t.id === 'btn-utplayers') return openModal('utplayers', t);
+      if (t.id === 'btn-publish-build') return openCommunityPublisher(t);
       if (t.hasAttribute('data-community-publish-toggle')) {
         if (!build.archetypeId) return toast('Select an archetype before publishing.');
         ui.communityPublishOpen = !ui.communityPublishOpen;

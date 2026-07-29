@@ -81,19 +81,30 @@ await send('Page.addScriptToEvaluateOnNewDocument', {
   source: `window.COMMUNITY_CONFIG = { apiUrl: '', turnstileSiteKey: '' };`,
 });
 await send('Page.navigate', { url: appUrl });
-await waitFor(`document.readyState === 'complete' && !!window.Calc && !!window.Share && !!window.Community`);
+await waitFor(`document.readyState === 'complete'
+  && !!window.Calc
+  && !!window.Share
+  && !!window.Community
+  && document.querySelector('#btn-community-builds[data-modal="community"]')
+  && document.querySelector('#btn-publish-build')`);
 assert.equal(await evaluate('window.OVERALL_MODEL.version'), 2);
 
 const communitySetup = await evaluate(`({
   configured: Community.isConfigured(),
-  hasTab: !!document.querySelector('[data-modal="community"]'),
-  tabDisabled: document.querySelector('[data-modal="community"]').disabled,
+  hasTopAction: !!document.querySelector('#btn-community-builds[data-modal="community"]'),
+  topActionDisabled: document.querySelector('#btn-community-builds').disabled,
+  hasPublishAction: !!document.querySelector('#btn-publish-build'),
+  publishActionDisabled: document.querySelector('#btn-publish-build').disabled,
+  lowerTabs: [...document.querySelectorAll('.builder-tab-list .builder-tab')].map((button) => button.textContent.trim()),
   hasArchetype: !!Share.fromUrl(),
 })`);
 assert.equal(communitySetup.configured, false);
-assert.equal(communitySetup.hasTab, true);
-assert.equal(communitySetup.tabDisabled, false);
-await click('[data-modal="community"]');
+assert.equal(communitySetup.hasTopAction, true);
+assert.equal(communitySetup.topActionDisabled, false);
+assert.equal(communitySetup.hasPublishAction, true);
+assert.equal(communitySetup.publishActionDisabled, true);
+assert.deepEqual(communitySetup.lowerTabs, ['PlayStyles', 'Specializations', 'Body']);
+await click('#btn-community-builds');
 assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'community');
 assert.equal(await evaluate(`!document.querySelector('#modal-root').classList.contains('hidden')`), true);
 assert.equal(await evaluate(`document.querySelector('#main-content').inert`), true);
@@ -104,12 +115,34 @@ assert.equal(await evaluate(`!!document.querySelector('[data-community-setup]')`
 assert.match(await evaluate(`document.querySelector('[data-community-setup]').innerText`), /not configured/i);
 await click('[data-modal-close]');
 assert.equal(await evaluate(`document.querySelector('#main-content').inert`), false);
-assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'tab-community');
+assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'btn-community-builds');
 
 await click('[data-arch="fwd_finisher"]');
+assert.equal(await evaluate(`document.querySelector('#btn-publish-build').disabled`), false);
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot').length`), 4);
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot.is-locked').length`), 4);
 assert.equal(await evaluate(`[...document.querySelectorAll('.summary-signature-slot img')].every((image) => !image.src.includes('/plus/'))`), true);
+for (const viewport of [1280, 768, 320]) {
+  await send('Emulation.setDeviceMetricsOverride', { width: viewport, height: 900, deviceScaleFactor: 1, mobile: viewport <= 640 });
+  await delay(75);
+  const responsiveActions = await evaluate(`(() => {
+    const summary = document.querySelector('#summary-bar');
+    const tabs = document.querySelector('#tabs');
+    const tabButtons = [...document.querySelectorAll('.builder-tab-list .builder-tab')];
+    return {
+      viewport: innerWidth,
+      summaryFits: summary.scrollWidth <= summary.clientWidth,
+      tabsFit: tabs.scrollWidth <= tabs.clientWidth,
+      tabLabelsFit: tabButtons.every((button) => button.scrollWidth <= button.clientWidth),
+    };
+  })()`);
+  assert.equal(responsiveActions.viewport, viewport);
+  assert.equal(responsiveActions.summaryFits, true);
+  assert.equal(responsiveActions.tabsFit, true);
+  assert.equal(responsiveActions.tabLabelsFit, true);
+}
+await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+await delay(75);
 const loadedFonts = await evaluate(`document.fonts.ready.then(async () => {
   const load = async (spec) => {
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -516,9 +549,9 @@ await send('Page.addScriptToEvaluateOnNewDocument', {
 });
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
 await send('Page.reload', { ignoreCache: true });
-await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('[data-modal="community"]')`);
+await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('#btn-community-builds[data-modal="community"]')`);
 errors.length = 0;
-await click('[data-modal="community"]');
+await click('#btn-community-builds');
 await waitFor(`document.querySelectorAll('.community-card').length === 1`);
 assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Creator control/);
 assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Alex/);
@@ -534,7 +567,10 @@ const communityDesktopLayout = await evaluate(`(() => {
 })()`);
 assert.equal(communityDesktopLayout.modalScrollWidth <= communityDesktopLayout.modalClientWidth, true);
 assert.equal(communityDesktopLayout.cardWidth >= 300, true);
-await click('[data-community-publish-toggle]');
+await click('[data-modal-close]');
+await click('#btn-publish-build');
+assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'community');
+assert.equal(await evaluate(`!!document.querySelector('#community-publish-form')`), true);
 await waitFor(`document.querySelector('#community-publish-submit') && !document.querySelector('#community-publish-submit').disabled`);
 await evaluate(`(() => {
   const author = document.querySelector('#community-author');
@@ -559,9 +595,9 @@ await waitFor(`window.__communityMock.deletes === 1 && document.querySelectorAll
 await click('[data-modal-close]');
 await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
 await send('Page.reload', { ignoreCache: true });
-await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('[data-modal="community"]')`);
+await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('#btn-community-builds[data-modal="community"]')`);
 errors.length = 0;
-await click('[data-modal="community"]');
+await click('#btn-community-builds');
 await waitFor(`document.querySelectorAll('.community-card').length === 1`);
 const communityMobileLayout = await evaluate(`(() => {
   const modal = document.querySelector('#modal-box');
