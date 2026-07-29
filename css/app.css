@@ -3534,7 +3534,7 @@ body::before {
   top: 57.2%;
   left: 9.8%;
   display: flex;
-  width: 1.6em;
+  width: 1.42em;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -3547,9 +3547,9 @@ body::before {
   --fc-playstyle-ink: var(--fc-ink);
   position: relative;
   display: block;
-  width: 1.6em;
-  height: 1.6em;
-  flex: 0 0 1.6em;
+  width: 1.42em;
+  height: 1.42em;
+  flex: 0 0 1.42em;
 }
 
 .fc-card-playstyle.is-locked {
@@ -3576,8 +3576,8 @@ body::before {
   top: 50%;
   left: 50%;
   display: block;
-  width: 1.3em;
-  height: 1.3em;
+  width: 1.15em;
+  height: 1.15em;
   overflow: visible;
   transform: translate(-50%, -65%);
 }
