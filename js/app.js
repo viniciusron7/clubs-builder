@@ -1012,7 +1012,7 @@
               <span>Athlete name <small id="community-athlete-name-count">${Array.from(ui.communityAthleteName).length}/15</small></span>
               <input id="community-athlete-name" name="athleteName" type="text" minlength="1" maxlength="15" required
                 value="${esc(ui.communityAthleteName)}" placeholder="Card display name" aria-describedby="community-athlete-name-rule" />
-              <small id="community-athlete-name-rule">Up to 15 characters and no more than 2 spaces.</small>
+              <small id="community-athlete-name-rule">Up to 15 characters.</small>
             </label>
             <label>
               <span>Build name <small>Optional</small></span>

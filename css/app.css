@@ -3812,7 +3812,7 @@ body::before {
 .community-form-grid label > span,
 .community-saved-author > span {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: .5rem;
   color: var(--color-text-secondary);
   font-size: .72rem;
