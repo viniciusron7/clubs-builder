@@ -25,12 +25,18 @@
     psPicker: false,
     utPlayers: null, utLoading: false, utError: null, utQuery: '',
     utPositions: [], utOnlyBuildable: true, utPlanCache: null,
+    communityItems: [], communityLoaded: false, communityLoading: false, communityLoadingMore: false,
+    communityError: null, communityNextCursor: null, communityQuery: '', communityPosition: 'all',
+    communityPublishOpen: false, communityPublishing: false, communityPublishError: null,
+    communityAuthor: '', communityBuildName: '', communityTurnstileToken: '', communityTurnstileError: null,
+    communityRemovingId: null, communityRequestId: 0, communityController: null, communityPublishController: null,
   };
   const OUTFIELD_POSITIONS = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
   // ponytail: teto de linhas desenhadas por render; sobe se a lista virar virtualizada.
   const UT_RENDER_LIMIT = 250;
   const HISTORY_LIMIT = 100;
   const history = window.BuildHistory.create(HISTORY_LIMIT);
+  let modalReturnFocus = null;
 
   // Recriar uma seção com innerHTML descarta o elemento focado — o campo de LVL e a busca de
   // atletas perdiam foco (e o resto do que estava sendo digitado) a cada tecla. Guarda id +
@@ -46,6 +52,7 @@
     if (!id) return;
     const next = document.getElementById(id);
     if (!next || next === active || next === document.activeElement) return;
+    if (ui.modal && !next.closest('#modal-box')) return;
     next.focus({ preventScroll: true });
     if (range && range[0] != null) { try { next.setSelectionRange(range[0], range[1]); } catch (e) {} }
   }
@@ -249,10 +256,16 @@
 
   // -------------------- tabs (abrem modais) --------------------
   function renderTabs() {
-    const tabs = [['playStyles', L.tabs.playStyles], ['specializations', L.tabs.specializations], ['body', L.tabs.body]];
-    const disabled = !build.archetypeId;
-    $('#tabs').innerHTML = tabs.map(([id, label]) =>
-      `<button data-modal="${id}" ${disabled ? 'disabled' : ''} class="builder-tab px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`
+    const tabs = [
+      ['playStyles', L.tabs.playStyles, true],
+      ['specializations', L.tabs.specializations, true],
+      ['body', L.tabs.body, true],
+      ['community', 'Community Builds', false],
+    ];
+    $('#tabs').innerHTML = tabs.map(([id, label, requiresBuild]) => {
+      const disabled = requiresBuild && !build.archetypeId;
+      return `<button id="tab-${id}" data-modal="${id}" aria-haspopup="dialog" ${disabled ? 'disabled' : ''} class="builder-tab ${id === 'community' ? 'community-tab' : ''} px-4 py-2 rounded-lg font-bold text-sm transition-colors ${disabled ? 'bg-app-panel text-t-disabled cursor-not-allowed' : 'bg-app-panel text-t-secondary hover:bg-btn-blue hover:text-white'}">${esc(label)}</button>`;
+    }
     ).join('');
   }
 
@@ -448,13 +461,23 @@
       </div>
       <div class="overflow-y-auto p-4 sm:p-6">${bodyHtml}</div>`;
   }
+  function setModalBackgroundInert(open) {
+    [$('#main-content'), document.querySelector('.app-footer')].forEach((element) => {
+      if (!element) return;
+      element.inert = open;
+      if (open) element.setAttribute('aria-hidden', 'true');
+      else element.removeAttribute('aria-hidden');
+    });
+  }
   function renderModal(d) {
     const root = $('#modal-root'), box = $('#modal-box');
-    if (!ui.modal || !d.arch) {
+    const canOpenWithoutBuild = ui.modal === 'community';
+    if (!ui.modal || (!d.arch && !canOpenWithoutBuild)) {
       root.classList.add('hidden');
       root.classList.remove('flex');
       box.innerHTML = '';
       delete box.dataset.modalKind;
+      setModalBackgroundInert(false);
       return;
     }
     let title = '', body = '';
@@ -464,10 +487,422 @@
     else if (ui.modal === 'optimize') { title = 'Optimize Overall'; body = optimizeModal(d); }
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
     else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
+    else if (ui.modal === 'community') { title = 'Community Builds'; body = communityModal(); }
     box.dataset.modalKind = ui.modal;
     box.innerHTML = modalShell(title, body);
     root.classList.remove('hidden'); root.classList.add('flex');
+    setModalBackgroundInert(true);
     if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus devolve depois se havia um campo
+    if (ui.modal === 'community') queueMicrotask(mountCommunityTurnstile);
+  }
+
+  // ---- Community Builds modal ----
+  const communityApi = () => window.Community || null;
+  const communityRequestCancelled = (error) => (
+    error && (error.name === 'AbortError' || error.code === 'REQUEST_ABORTED')
+  );
+  const communityConfigured = () => {
+    const api = communityApi();
+    try { return !!(api && api.isConfigured()); } catch (e) { return false; }
+  };
+  const communityPositionOptions = ['all', 'GK'].concat(OUTFIELD_POSITIONS);
+
+  function communityDate(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return 'Recently';
+    try {
+      return new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+    } catch (e) {
+      return date.toISOString().slice(0, 10);
+    }
+  }
+
+  function communityBuildInfo(item) {
+    if (!item || typeof item.buildCode !== 'string') return null;
+    const decoded = S.decode(item.buildCode);
+    if (!decoded) return null;
+    const normalized = C.normalizeBuild(Object.assign(defaultBuild(), decoded)).build;
+    const derived = C.derive(normalized);
+    if (!derived.arch) return null;
+    const positions = normalized.positions || [];
+    const overalls = C.overallMapForValues(positions, derived, null);
+    return {
+      build: normalized,
+      derived,
+      positions,
+      overalls,
+      archName: archName(derived.arch.id),
+      openUrl: S.toUrl(normalized),
+    };
+  }
+
+  function communityCard(item, info) {
+    const api = communityApi();
+    let canDelete = false;
+    try { canDelete = !!(api && api.getManageToken(item.id)); } catch (e) {}
+    const deleting = ui.communityRemovingId === item.id;
+    const positionSummary = info.positions.length
+      ? info.positions.map((position) => `<span><strong>${esc(position)}</strong>${overallsValue(info.overalls, position)}</span>`).join('')
+      : '<span class="is-muted">No position set</span>';
+    const searchText = [
+      item.buildName, item.authorName, info.archName, info.positions.join(' '),
+    ].filter(Boolean).join(' ').toLowerCase();
+    return `
+      <article class="community-card" data-community-search-text="${esc(searchText)}" data-community-card-position="${esc(info.positions.join(' '))}">
+        <header class="community-card-head">
+          <span class="community-arch-icon" aria-hidden="true">
+            <img src="archetypes/${esc(info.derived.arch.iconFileName)}" alt="" />
+          </span>
+          <div class="community-card-title">
+            <h3>${esc(item.buildName || 'Untitled build')}</h3>
+            <p>by <strong>${esc(item.authorName || 'Anonymous')}</strong></p>
+          </div>
+          <span class="community-level"><small>LVL</small>${info.build.level}</span>
+        </header>
+        <div class="community-card-identity">
+          <span>${esc(info.archName)}</span>
+          <time datetime="${esc(item.createdAt || '')}">${esc(communityDate(item.createdAt))}</time>
+        </div>
+        <div class="community-overalls" aria-label="Estimated overalls">${positionSummary}</div>
+        <div class="community-card-meta">
+          <span><small>AP used</small><strong>${info.derived.ap.spent}</strong></span>
+          <span><small>AP left</small><strong class="${info.derived.ap.available < 0 ? 'is-negative' : ''}">${info.derived.ap.available}</strong></span>
+          <span><small>Body</small><strong>${info.build.height} / ${info.build.weight}</strong></span>
+        </div>
+        <footer class="community-card-actions">
+          <a href="${esc(info.openUrl)}" target="_blank" rel="noopener noreferrer" class="community-open">Open build <span aria-hidden="true">↗</span></a>
+          <button type="button" data-community-copy="${esc(item.id)}">Copy link</button>
+          ${canDelete ? `<button type="button" data-community-delete="${esc(item.id)}" class="community-delete" ${deleting ? 'disabled' : ''}>${deleting ? 'Deleting…' : 'Delete'}</button>` : ''}
+        </footer>
+      </article>`;
+  }
+
+  function overallsValue(overalls, position) {
+    const value = overalls && overalls[position];
+    return value == null ? '' : `<b>${value}</b>`;
+  }
+
+  function communityMatches(item, info) {
+    const query = ui.communityQuery.trim().toLowerCase();
+    const position = ui.communityPosition;
+    if (position !== 'all' && !info.positions.includes(position)) return false;
+    if (!query) return true;
+    return [
+      item.buildName, item.authorName, info.archName, info.positions.join(' '),
+      ...Object.values(info.overalls || {}).map(String),
+    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+  }
+
+  function communityResultsHtml() {
+    if (ui.communityLoading && !ui.communityItems.length) {
+      return `<div class="community-skeleton-grid" aria-label="Loading community builds">
+        ${Array.from({ length: 6 }, () => '<span class="community-skeleton"></span>').join('')}
+      </div>`;
+    }
+    if (ui.communityError && !ui.communityItems.length) {
+      return `<div class="community-state is-error" role="alert">
+        <span class="community-state-mark" aria-hidden="true">!</span>
+        <h3>Community builds could not be loaded</h3>
+        <p>${esc(ui.communityError)}</p>
+        <button type="button" data-community-retry>Try again</button>
+      </div>`;
+    }
+    const cards = ui.communityItems
+      .map((item) => ({ item, info: communityBuildInfo(item) }))
+      .filter(({ info }) => info)
+      .filter(({ item, info }) => communityMatches(item, info));
+    if (!cards.length) {
+      const filtered = !!(ui.communityQuery.trim() || ui.communityPosition !== 'all');
+      return `<div class="community-state is-empty">
+        <span class="community-state-mark" aria-hidden="true">${filtered ? '⌕' : '+'}</span>
+        <h3>${filtered ? 'No builds match these filters' : 'No community builds yet'}</h3>
+        <p>${filtered ? 'Try another name, build, position or OVR.' : 'Publish the first build and give your friends something to try.'}</p>
+        ${filtered ? '<button type="button" data-community-clear>Clear filters</button>' : ''}
+      </div>
+      ${ui.communityNextCursor ? `<button type="button" data-community-more class="community-more" ${ui.communityLoadingMore ? 'disabled' : ''}>${ui.communityLoadingMore ? 'Loading…' : 'Search older builds'}</button>` : ''}`;
+    }
+    return `
+      <div class="community-grid">${cards.map(({ item, info }) => communityCard(item, info)).join('')}</div>
+      ${ui.communityNextCursor ? `<button type="button" data-community-more class="community-more" ${ui.communityLoadingMore ? 'disabled' : ''}>${ui.communityLoadingMore ? 'Loading…' : 'Load more builds'}</button>` : ''}`;
+  }
+
+  function communityPublishPanel() {
+    if (!ui.communityPublishOpen) return '';
+    const ready = !!ui.communityTurnstileToken;
+    return `
+      <form id="community-publish-form" class="community-publish-form">
+        <div class="community-form-copy">
+          <span class="community-eyebrow">Publish current build</span>
+          <h3>Give this build a name</h3>
+          <p>Your public name is remembered only on this device. No account is created.</p>
+        </div>
+        <label>
+          <span>Your name</span>
+          <input id="community-author" name="authorName" type="text" minlength="2" maxlength="32" required autocomplete="name"
+            value="${esc(ui.communityAuthor)}" placeholder="How friends know you" />
+        </label>
+        <label>
+          <span>Build name</span>
+          <input id="community-build-name" name="buildName" type="text" minlength="2" maxlength="60" required
+            value="${esc(ui.communityBuildName)}" placeholder="e.g. Press-resistant creator" />
+        </label>
+        <div class="community-verification">
+          ${ready ? '<span class="community-verified" aria-hidden="true">✓</span>' : '<div id="community-turnstile"></div>'}
+          <p id="community-turnstile-status" class="${ui.communityTurnstileError ? 'is-error' : ready ? 'is-ready' : ''}" aria-live="polite">
+            ${esc(ui.communityTurnstileError || (ready ? 'Verification complete.' : 'Complete the verification to publish.'))}
+          </p>
+        </div>
+        <div id="community-publish-error" class="community-form-error ${ui.communityPublishError ? '' : 'hidden'}" role="alert">${esc(ui.communityPublishError || '')}</div>
+        <div class="community-form-actions">
+          <button type="button" data-community-publish-cancel ${ui.communityPublishing ? 'disabled' : ''}>Cancel</button>
+          <button id="community-publish-submit" type="submit" class="is-primary" ${!ready || ui.communityPublishing ? 'disabled' : ''}>
+            ${ui.communityPublishing ? 'Publishing…' : 'Publish build'}
+          </button>
+        </div>
+      </form>`;
+  }
+
+  function communityModal() {
+    if (!communityConfigured()) {
+      return `
+        <div class="community-state is-setup" data-community-setup>
+          <span class="community-state-mark" aria-hidden="true">◇</span>
+          <span class="community-eyebrow">Setup required</span>
+          <h3>Community storage is not configured</h3>
+          <p>The builder is ready for community posts, but it still needs the public API URL and Turnstile site key.</p>
+          <code>window.COMMUNITY_CONFIG</code>
+        </div>`;
+    }
+    const positionChips = communityPositionOptions.map((position) => {
+      const selected = ui.communityPosition === position;
+      return `<button type="button" data-community-position="${position}" aria-pressed="${selected}" class="${selected ? 'is-on' : ''}">${position === 'all' ? 'All' : position}</button>`;
+    }).join('');
+    return `
+      <div class="community-shell">
+        <section class="community-intro">
+          <div>
+            <span class="community-eyebrow">Built by players</span>
+            <p>Try public builds from the community or publish the one currently open in your builder.</p>
+          </div>
+          <button id="community-publish-toggle" type="button" data-community-publish-toggle class="community-publish-toggle" ${!build.archetypeId || ui.communityPublishing ? 'disabled' : ''}>
+            ${ui.communityPublishOpen ? 'Close publisher' : 'Publish current build'}
+          </button>
+        </section>
+        ${!build.archetypeId ? '<p class="community-no-build">Select an archetype before publishing. Browsing remains available.</p>' : ''}
+        ${communityPublishPanel()}
+        <section class="community-browser" aria-label="Browse community builds">
+          <div class="community-toolbar">
+            <div class="community-position-filter" aria-label="Filter by position">${positionChips}</div>
+            <div class="community-search-wrap">
+              <span aria-hidden="true">⌕</span>
+              <input id="community-search" name="communitySearch" aria-label="Search community builds" type="search" value="${esc(ui.communityQuery)}" placeholder="Search build, author, position or OVR" />
+            </div>
+            <button type="button" data-community-refresh aria-label="Refresh community builds" title="Refresh">↻</button>
+          </div>
+          <div id="community-results" tabindex="-1">${communityResultsHtml()}</div>
+        </section>
+      </div>`;
+  }
+
+  function updateCommunityResults() {
+    const results = $('#community-results');
+    if (results) results.innerHTML = communityResultsHtml();
+  }
+
+  function mergeCommunityItems(items, append) {
+    const incoming = Array.isArray(items) ? items : [];
+    const merged = append ? ui.communityItems.concat(incoming) : incoming.slice();
+    const seen = new Set();
+    ui.communityItems = merged.filter((item) => {
+      if (!item || item.id == null || seen.has(String(item.id))) return false;
+      seen.add(String(item.id));
+      return true;
+    });
+  }
+
+  async function loadCommunityBuilds(options = {}) {
+    const api = communityApi();
+    const append = !!options.append;
+    if (!api || !communityConfigured()) return;
+    if (append && (!ui.communityNextCursor || ui.communityLoadingMore)) return;
+    if (!append && ui.communityLoading) return;
+    const requestId = ++ui.communityRequestId;
+    if (!append && ui.communityController) ui.communityController.abort();
+    const controller = new AbortController();
+    ui.communityController = controller;
+    ui.communityError = null;
+    if (append) ui.communityLoadingMore = true;
+    else ui.communityLoading = true;
+    if (ui.modal === 'community') refreshModal();
+    try {
+      const result = await api.list({
+        limit: 48,
+        cursor: append ? ui.communityNextCursor : null,
+        signal: controller.signal,
+      });
+      if (requestId !== ui.communityRequestId) return;
+      mergeCommunityItems(result && result.items, append);
+      ui.communityNextCursor = result && result.nextCursor || null;
+      ui.communityLoaded = true;
+    } catch (error) {
+      if (communityRequestCancelled(error)) return;
+      if (requestId !== ui.communityRequestId) return;
+      ui.communityError = String((error && error.message) || 'Check your connection and try again.').slice(0, 180);
+    } finally {
+      if (requestId === ui.communityRequestId) {
+        ui.communityLoading = false;
+        ui.communityLoadingMore = false;
+        if (ui.communityController === controller) ui.communityController = null;
+        if (ui.modal === 'community') refreshModal();
+      }
+    }
+  }
+
+  function updateCommunityVerification() {
+    const status = $('#community-turnstile-status');
+    const submit = $('#community-publish-submit');
+    if (status) {
+      status.textContent = ui.communityTurnstileError || (ui.communityTurnstileToken ? 'Verification complete.' : 'Complete the verification to publish.');
+      status.classList.toggle('is-error', !!ui.communityTurnstileError);
+      status.classList.toggle('is-ready', !!ui.communityTurnstileToken);
+    }
+    if (submit) submit.disabled = !ui.communityTurnstileToken || ui.communityPublishing;
+  }
+
+  function mountCommunityTurnstile() {
+    if (ui.modal !== 'community' || !ui.communityPublishOpen || ui.communityTurnstileToken) return;
+    const api = communityApi();
+    const container = $('#community-turnstile');
+    if (!api || !container || container.dataset.mounted) return;
+    container.dataset.mounted = 'true';
+    const callbacks = {
+      action: 'publish_build',
+      onToken(token) {
+        ui.communityTurnstileToken = String(token || '');
+        ui.communityTurnstileError = null;
+        updateCommunityVerification();
+      },
+      onExpired() {
+        ui.communityTurnstileToken = '';
+        ui.communityTurnstileError = 'Verification expired. Complete it again.';
+        updateCommunityVerification();
+      },
+      onError() {
+        ui.communityTurnstileToken = '';
+        ui.communityTurnstileError = 'Verification could not start. Please try again.';
+        updateCommunityVerification();
+      },
+    };
+    try {
+      const mounted = api.mountTurnstile(container, callbacks);
+      if (mounted && typeof mounted.then === 'function') mounted.catch(callbacks.onError);
+    } catch (error) {
+      callbacks.onError();
+    }
+  }
+
+  async function publishCommunityBuild() {
+    const api = communityApi();
+    const form = $('#community-publish-form');
+    if (!api || !communityConfigured() || !form || ui.communityPublishing) return;
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const authorName = ($('#community-author') || {}).value.trim();
+    const buildName = ($('#community-build-name') || {}).value.trim();
+    ui.communityAuthor = authorName;
+    ui.communityBuildName = buildName;
+    if (!ui.communityTurnstileToken) {
+      ui.communityTurnstileError = 'Complete the verification before publishing.';
+      updateCommunityVerification();
+      return;
+    }
+    const controller = new AbortController();
+    ui.communityPublishController = controller;
+    ui.communityPublishing = true;
+    ui.communityPublishError = null;
+    refreshModal();
+    let published = false;
+    try {
+      const result = await api.publish({
+        authorName,
+        buildName,
+        buildCode: S.encode(build),
+        turnstileToken: ui.communityTurnstileToken,
+        signal: controller.signal,
+      });
+      if (result && result.build) mergeCommunityItems([result.build].concat(ui.communityItems), false);
+      ui.communityLoaded = true;
+      ui.communityPublishOpen = false;
+      ui.communityBuildName = '';
+      ui.communityTurnstileToken = '';
+      ui.communityTurnstileError = null;
+      try { api.unmountTurnstile(); } catch (e) {}
+      published = true;
+      let canManage = false;
+      try { canManage = !!api.getManageToken(result.build.id); } catch (e) {}
+      toast(canManage
+        ? 'Build published to the community.'
+        : 'Build published, but this browser could not save deletion access.');
+    } catch (error) {
+      if (communityRequestCancelled(error)) return;
+      ui.communityPublishError = String((error && error.message) || 'The build could not be published. Please try again.').slice(0, 180);
+      ui.communityTurnstileToken = '';
+      try { api.resetTurnstile(); } catch (e) {}
+    } finally {
+      if (ui.communityPublishController === controller) ui.communityPublishController = null;
+      ui.communityPublishing = false;
+      if (ui.modal === 'community') {
+        refreshModal();
+        if (published) queueMicrotask(() => {
+          const toggle = $('#community-publish-toggle');
+          if (toggle) toggle.focus({ preventScroll: true });
+        });
+      }
+    }
+  }
+
+  function communityItem(id) {
+    return ui.communityItems.find((item) => String(item.id) === String(id)) || null;
+  }
+
+  async function copyCommunityBuild(id) {
+    const item = communityItem(id);
+    const info = communityBuildInfo(item);
+    if (!info) return toast('This community build is invalid.');
+    try {
+      await navigator.clipboard.writeText(info.openUrl);
+      toast('Build link copied.');
+    } catch (error) {
+      prompt('Copy this build link:', info.openUrl);
+    }
+  }
+
+  async function removeCommunityBuild(id) {
+    const api = communityApi();
+    if (!api || ui.communityRemovingId) return;
+    let canDelete = false;
+    try { canDelete = !!api.getManageToken(id); } catch (e) {}
+    if (!canDelete) return toast('This build can only be deleted from the device that published it.');
+    if (!confirm('Delete this community build? This cannot be undone.')) return;
+    ui.communityRemovingId = id;
+    refreshModal();
+    let removed = false;
+    try {
+      await api.remove(id);
+      ui.communityItems = ui.communityItems.filter((item) => String(item.id) !== String(id));
+      removed = true;
+      toast('Community build deleted.');
+    } catch (error) {
+      toast(String((error && error.message) || 'The build could not be deleted.').slice(0, 140));
+    } finally {
+      ui.communityRemovingId = null;
+      if (ui.modal === 'community') {
+        refreshModal();
+        if (removed) queueMicrotask(() => {
+          const results = $('#community-results');
+          if (results) results.focus({ preventScroll: true });
+        });
+      }
+    }
   }
 
   // ---- Body modal ----
@@ -1129,8 +1564,28 @@
     const t = $('#toast'); t.firstElementChild.textContent = msg; t.classList.remove('hidden');
     clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 2200);
   }
-  function openModal(id) { ui.modal = id; ui.selectedAttr = null; ui.psPicker = false; render(); }
+  function openModal(id, opener = null) {
+    const active = opener || document.activeElement;
+    modalReturnFocus = active && active.id
+      ? { id: active.id }
+      : active && active.dataset && active.dataset.modal
+        ? { modal: active.dataset.modal }
+        : null;
+    ui.modal = id;
+    ui.selectedAttr = null;
+    ui.psPicker = false;
+    if (id === 'community' && !ui.communityAuthor) {
+      const api = communityApi();
+      try { ui.communityAuthor = api ? api.getSavedAuthor() || '' : ''; } catch (e) {}
+    }
+    render();
+    if (id === 'community' && communityConfigured() && !ui.communityLoaded && !ui.communityLoading) void loadCommunityBuilds();
+  }
   function closeModal() {
+    if (ui.modal === 'community' && ui.communityPublishing) {
+      toast('Wait for the publication to finish.');
+      return;
+    }
     commitBodyDrag(); // fechar no meio de um arrasto (Esc) não pode deixar o snapshot pendurado
     if (ui.modal === 'optimize' && ui.optimizeController) {
       ui.optimizeRunId++;
@@ -1138,9 +1593,32 @@
       ui.optimizeController = null;
       ui.optimizing = false;
     }
+    if (ui.modal === 'community') {
+      const api = communityApi();
+      if (ui.communityController) {
+        ui.communityRequestId++;
+        ui.communityController.abort();
+        ui.communityController = null;
+        ui.communityLoading = false;
+        ui.communityLoadingMore = false;
+      }
+      try { if (api) api.unmountTurnstile(); } catch (e) {}
+      ui.communityPublishOpen = false;
+      ui.communityPublishError = null;
+      ui.communityTurnstileToken = '';
+      ui.communityTurnstileError = null;
+    }
     ui.modal = null;
     ui.psPicker = false;
     render();
+    const focusTarget = modalReturnFocus;
+    modalReturnFocus = null;
+    if (focusTarget) queueMicrotask(() => {
+      const target = focusTarget.id
+        ? document.getElementById(focusTarget.id)
+        : document.querySelector(`[data-modal="${focusTarget.modal}"]`);
+      if (target && !target.disabled) target.focus({ preventScroll: true });
+    });
   }
 
   // -------------------- eventos --------------------
@@ -1154,7 +1632,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-toggle],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // clique no backdrop
       if (!t) return;
       // Os chips são preferência de otimizador, não estado de build: mudam a URL mas não gastam
@@ -1176,8 +1654,58 @@
         syncUrl();
         return;
       }
-      if (t.id === 'btn-maxsum') return openModal('maxsum');
-      if (t.id === 'btn-utplayers') return openModal('utplayers');
+      if (t.id === 'btn-maxsum') return openModal('maxsum', t);
+      if (t.id === 'btn-utplayers') return openModal('utplayers', t);
+      if (t.hasAttribute('data-community-publish-toggle')) {
+        if (!build.archetypeId) return toast('Select an archetype before publishing.');
+        ui.communityPublishOpen = !ui.communityPublishOpen;
+        ui.communityPublishError = null;
+        ui.communityTurnstileError = null;
+        if (!ui.communityPublishOpen) {
+          const api = communityApi();
+          ui.communityTurnstileToken = '';
+          try { if (api) api.unmountTurnstile(); } catch (error) {}
+        }
+        return refreshModal();
+      }
+      if (t.hasAttribute('data-community-publish-cancel')) {
+        const api = communityApi();
+        ui.communityPublishOpen = false;
+        ui.communityPublishError = null;
+        ui.communityTurnstileToken = '';
+        ui.communityTurnstileError = null;
+        try { if (api) api.unmountTurnstile(); } catch (error) {}
+        refreshModal();
+        queueMicrotask(() => {
+          const toggle = $('#community-publish-toggle');
+          if (toggle) toggle.focus({ preventScroll: true });
+        });
+        return;
+      }
+      if (t.dataset.communityPosition) {
+        ui.communityPosition = t.dataset.communityPosition;
+        document.querySelectorAll('[data-community-position]').forEach((button) => {
+          const selected = button.dataset.communityPosition === ui.communityPosition;
+          button.classList.toggle('is-on', selected);
+          button.setAttribute('aria-pressed', String(selected));
+        });
+        return updateCommunityResults();
+      }
+      if (t.hasAttribute('data-community-refresh') || t.hasAttribute('data-community-retry')) return void loadCommunityBuilds();
+      if (t.hasAttribute('data-community-more')) return void loadCommunityBuilds({ append: true });
+      if (t.hasAttribute('data-community-clear')) {
+        ui.communityQuery = '';
+        ui.communityPosition = 'all';
+        const input = $('#community-search'); if (input) input.value = '';
+        document.querySelectorAll('[data-community-position]').forEach((button) => {
+          const selected = button.dataset.communityPosition === 'all';
+          button.classList.toggle('is-on', selected);
+          button.setAttribute('aria-pressed', String(selected));
+        });
+        return updateCommunityResults();
+      }
+      if (t.hasAttribute('data-community-copy')) return void copyCommunityBuild(t.dataset.communityCopy);
+      if (t.hasAttribute('data-community-delete')) return void removeCommunityBuild(t.dataset.communityDelete);
       if (t.id === 'sum-run') return runMaxSum();
       if (t.id === 'sum-all') {
         build.sumExcluded = [];
@@ -1197,9 +1725,9 @@
       if (t.dataset.filter) { ui.filter = t.dataset.filter; return renderArchetypes(); }
       if (t.dataset.pos) return togglePosition(t.dataset.pos);
       if (t.id === 'btn-weights') { ui.showWeights = !ui.showWeights; return render(); }
-      if (t.id === 'btn-optimize') return openModal('optimize');
+      if (t.id === 'btn-optimize') return openModal('optimize', t);
       if (t.id === 'opt-run') return runOptimize();
-      if (t.hasAttribute('data-modal')) return openModal(t.dataset.modal);
+      if (t.hasAttribute('data-modal')) return openModal(t.dataset.modal, t);
       if (t.hasAttribute('data-modal-close')) return closeModal();
       if (t.hasAttribute('data-attr')) {
         ui.selectedAttr = ui.selectedAttr === t.dataset.attr ? null : t.dataset.attr;
@@ -1261,8 +1789,21 @@
         return commitBuildChange(() => { build.level = C.clamp(parseInt(raw, 10) || 1, 1, D.maxLevel); });
       }
       if (t.id === 'ut-search') { ui.utQuery = t.value; return refreshModal(); }
+      if (t.id === 'community-search') { ui.communityQuery = t.value; return updateCommunityResults(); }
+      if (t.id === 'community-author') {
+        ui.communityAuthor = t.value;
+        const api = communityApi();
+        try { if (api) api.saveAuthor(t.value); } catch (error) {}
+        return;
+      }
+      if (t.id === 'community-build-name') { ui.communityBuildName = t.value; return; }
       if (t.dataset.body) return liveBody(t.dataset.body, parseInt(t.value, 10));
       if (t.hasAttribute('data-attr-range')) return liveAttrRange(t);
+    });
+    document.body.addEventListener('submit', (e) => {
+      if (e.target.id !== 'community-publish-form') return;
+      e.preventDefault();
+      void publishCommunityBuild();
     });
     document.body.addEventListener('change', (e) => {
       if (e.target.id === 'level-input') return render(); // devolve o valor normalizado ao sair do campo
@@ -1270,6 +1811,36 @@
       if (e.target.hasAttribute('data-attr-range')) return adjustAttr(ui.selectedAttr, parseInt(e.target.value, 10), 'set');
     });
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && ui.modal) {
+        const box = $('#modal-box');
+        const focusable = Array.from(box.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )).filter((element) => element.getClientRects().length > 0);
+        if (!focusable.length) {
+          e.preventDefault();
+          box.focus({ preventScroll: true });
+          return;
+        }
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (
+          !box.contains(document.activeElement) ||
+          !focusable.includes(document.activeElement)
+        ) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus({ preventScroll: true });
+          return;
+        }
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus({ preventScroll: true });
+          return;
+        }
+        if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus({ preventScroll: true });
+          return;
+        }
+      }
       const key = e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
       // só campos de digitação: com um slider focado Ctrl+Z continua desfazendo o build

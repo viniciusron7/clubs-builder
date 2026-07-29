@@ -21,6 +21,12 @@ node_modules/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+supabase/.temp/
+supabase/.branches/
+supabase/functions/**/.env
+supabase/functions/**/.env.*
 
 # Logs e arquivos temporários
 *.log

@@ -77,20 +77,54 @@ const screenshot = async (file) => {
 
 await Promise.all([send('Page.enable'), send('Runtime.enable'), send('Log.enable'), send('Network.enable')]);
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+await send('Page.addScriptToEvaluateOnNewDocument', {
+  source: `window.COMMUNITY_CONFIG = { apiUrl: '', turnstileSiteKey: '' };`,
+});
 await send('Page.navigate', { url: appUrl });
-await waitFor(`document.readyState === 'complete' && !!window.Calc && !!window.Share`);
+await waitFor(`document.readyState === 'complete' && !!window.Calc && !!window.Share && !!window.Community`);
 assert.equal(await evaluate('window.OVERALL_MODEL.version'), 2);
+
+const communitySetup = await evaluate(`({
+  configured: Community.isConfigured(),
+  hasTab: !!document.querySelector('[data-modal="community"]'),
+  tabDisabled: document.querySelector('[data-modal="community"]').disabled,
+  hasArchetype: !!Share.fromUrl(),
+})`);
+assert.equal(communitySetup.configured, false);
+assert.equal(communitySetup.hasTab, true);
+assert.equal(communitySetup.tabDisabled, false);
+await click('[data-modal="community"]');
+assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'community');
+assert.equal(await evaluate(`!document.querySelector('#modal-root').classList.contains('hidden')`), true);
+assert.equal(await evaluate(`document.querySelector('#main-content').inert`), true);
+assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'modal-box');
+await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))`);
+assert.equal(await evaluate(`document.activeElement && document.activeElement.hasAttribute('data-modal-close')`), true);
+assert.equal(await evaluate(`!!document.querySelector('[data-community-setup]')`), true);
+assert.match(await evaluate(`document.querySelector('[data-community-setup]').innerText`), /not configured/i);
+await click('[data-modal-close]');
+assert.equal(await evaluate(`document.querySelector('#main-content').inert`), false);
+assert.equal(await evaluate(`document.activeElement && document.activeElement.id`), 'tab-community');
 
 await click('[data-arch="fwd_finisher"]');
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot').length`), 4);
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot.is-locked').length`), 4);
 assert.equal(await evaluate(`[...document.querySelectorAll('.summary-signature-slot img')].every((image) => !image.src.includes('/plus/'))`), true);
-const loadedFonts = await evaluate(`document.fonts.ready.then(async () => ({
-  ui: (await document.fonts.load('400 16px "Cruyff Sans"')).length,
-  display: (await document.fonts.load('500 16px "Cruyff Sans Condensed"')).length,
-  body: getComputedStyle(document.body).fontFamily,
-  heading: getComputedStyle(document.querySelector('#attributes h2')).fontFamily,
-}))`);
+const loadedFonts = await evaluate(`document.fonts.ready.then(async () => {
+  const load = async (spec) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { return (await document.fonts.load(spec)).length; }
+      catch (error) { await new Promise((resolve) => setTimeout(resolve, 75)); }
+    }
+    return -1;
+  };
+  return {
+    ui: await load('400 16px "Cruyff Sans"'),
+    display: await load('500 16px "Cruyff Sans Condensed"'),
+    body: getComputedStyle(document.body).fontFamily,
+    heading: getComputedStyle(document.querySelector('#attributes h2')).fontFamily,
+  };
+})`);
 assert.ok(loadedFonts.ui > 0);
 assert.ok(loadedFonts.display > 0);
 assert.match(loadedFonts.body, /Cruyff Sans/);
@@ -241,11 +275,11 @@ assert.ok(playstyleSale);
 assert.equal(playstyleSale.refund, playstyleQuickUnlock.cost);
 assert.match(playstyleSale.idleText, /Unlocked/i);
 assert.match(playstyleSale.actionText, /Sell/i);
-assert.equal(playstyleSale.idleOpacity, '1');
-assert.equal(playstyleSale.actionOpacity, '0');
+assert.equal(Number(playstyleSale.idleOpacity) > 0.99, true);
+assert.equal(Number(playstyleSale.actionOpacity) < 0.01, true);
 await hover(`[data-ps-sell="${playstyleQuickUnlock.id}"]`);
-assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"] .ps-sale-idle')).opacity`), '0');
-assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"] .ps-sale-action')).opacity`), '1');
+await waitFor(`Number(getComputedStyle(document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"] .ps-sale-idle')).opacity) < 0.01`);
+await waitFor(`Number(getComputedStyle(document.querySelector('[data-ps-sell="${playstyleQuickUnlock.id}"] .ps-sale-action')).opacity) > 0.99`);
 await screenshot('/tmp/clubs-builder-playstyles-sell-hover.png');
 await click(`[data-ps-sell="${playstyleQuickUnlock.id}"]`);
 assert.equal(await evaluate(`Share.fromUrl().playstyles.includes(${JSON.stringify(playstyleQuickUnlock.id)})`), false);
@@ -410,10 +444,143 @@ errors.length = 0;
 await screenshot('/tmp/clubs-builder-mobile-playstyles.png');
 await click('[data-modal-close]');
 
+// Community Builds configured state: gallery, cached author, publish and local-token deletion.
+const communitySeedCode = Buffer.from(JSON.stringify({
+  v: 2,
+  a: 'mid_creator',
+  l: 100,
+  h: 180,
+  w: 75,
+  t: { vision: 99, short_passing: 96, long_passing: 96 },
+  po: ['CAM', 'CM'],
+})).toString('base64url');
+await send('Page.addScriptToEvaluateOnNewDocument', {
+  source: `(() => {
+    window.COMMUNITY_CONFIG = {
+      apiUrl: 'https://community.test/functions/v1/community-builds',
+      turnstileSiteKey: 'test-site-key',
+    };
+    const nativeFetch = window.fetch.bind(window);
+    const seed = {
+      id: '11111111-1111-4111-8111-111111111111',
+      authorName: 'Alex',
+      buildName: 'Creator control',
+      buildCode: ${JSON.stringify(communitySeedCode)},
+      createdAt: '2026-07-28T12:00:00.000Z',
+    };
+    window.__communityMock = { posts: 0, deletes: 0, items: [seed] };
+    window.fetch = async (input, options = {}) => {
+      const url = String(input && input.url || input);
+      if (!url.startsWith(window.COMMUNITY_CONFIG.apiUrl)) return nativeFetch(input, options);
+      const method = String(options.method || 'GET').toUpperCase();
+      if (method === 'GET') {
+        return new Response(JSON.stringify({ items: window.__communityMock.items, nextCursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'POST') {
+        const payload = JSON.parse(options.body);
+        const build = {
+          id: '22222222-2222-4222-8222-222222222222',
+          authorName: payload.authorName,
+          buildName: payload.buildName,
+          buildCode: payload.buildCode,
+          createdAt: '2026-07-29T12:00:00.000Z',
+        };
+        window.__communityMock.posts++;
+        window.__communityMock.items.unshift(build);
+        return new Response(JSON.stringify({ build, manageToken: 'cbm_' + 'a'.repeat(43) }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'DELETE') {
+        window.__communityMock.deletes++;
+        return new Response(JSON.stringify({ deleted: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(null, { status: 405 });
+    };
+    window.turnstile = {
+      render(container, options) {
+        queueMicrotask(() => options.callback('test-turnstile-token'));
+        return 'community-test-widget';
+      },
+      remove() {},
+      reset() {},
+    };
+  })();`,
+});
+await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+await send('Page.reload', { ignoreCache: true });
+await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('[data-modal="community"]')`);
+errors.length = 0;
+await click('[data-modal="community"]');
+await waitFor(`document.querySelectorAll('.community-card').length === 1`);
+assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Creator control/);
+assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Alex/);
+assert.equal(await evaluate(`document.querySelectorAll('.community-card [data-community-delete]').length`), 0);
+const communityDesktopLayout = await evaluate(`(() => {
+  const modal = document.querySelector('#modal-box');
+  const card = document.querySelector('.community-card');
+  return {
+    modalClientWidth: modal.clientWidth,
+    modalScrollWidth: modal.scrollWidth,
+    cardWidth: Math.round(card.getBoundingClientRect().width),
+  };
+})()`);
+assert.equal(communityDesktopLayout.modalScrollWidth <= communityDesktopLayout.modalClientWidth, true);
+assert.equal(communityDesktopLayout.cardWidth >= 300, true);
+await click('[data-community-publish-toggle]');
+await waitFor(`document.querySelector('#community-publish-submit') && !document.querySelector('#community-publish-submit').disabled`);
+await evaluate(`(() => {
+  const author = document.querySelector('#community-author');
+  const name = document.querySelector('#community-build-name');
+  author.value = 'Vinicius';
+  name.value = 'GK community test';
+  author.dispatchEvent(new Event('input', { bubbles: true }));
+  name.dispatchEvent(new Event('input', { bubbles: true }));
+})()`);
+await click('#community-publish-submit');
+await waitFor(`window.__communityMock.posts === 1 && document.querySelectorAll('.community-card').length === 2`);
+assert.equal(await evaluate(`Community.getSavedAuthor()`), 'Vinicius');
+assert.equal(await evaluate(`document.querySelectorAll('[data-community-delete]').length`), 1);
+await click('[data-community-publish-toggle]');
+assert.equal(await evaluate(`document.querySelector('#community-author').value`), 'Vinicius');
+await click('[data-community-publish-cancel]');
+await screenshot('/tmp/clubs-builder-community-desktop.png');
+await evaluate(`window.confirm = () => true`);
+await click('[data-community-delete="22222222-2222-4222-8222-222222222222"]');
+await waitFor(`window.__communityMock.deletes === 1 && document.querySelectorAll('.community-card').length === 1`);
+
+await click('[data-modal-close]');
+await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+await send('Page.reload', { ignoreCache: true });
+await waitFor(`document.readyState === 'complete' && !!window.Community && document.querySelector('[data-modal="community"]')`);
+errors.length = 0;
+await click('[data-modal="community"]');
+await waitFor(`document.querySelectorAll('.community-card').length === 1`);
+const communityMobileLayout = await evaluate(`(() => {
+  const modal = document.querySelector('#modal-box');
+  return {
+    viewportWidth: innerWidth,
+    pageScrollWidth: document.documentElement.scrollWidth,
+    modalClientWidth: modal.clientWidth,
+    modalScrollWidth: modal.scrollWidth,
+  };
+})()`);
+assert.equal(communityMobileLayout.pageScrollWidth <= communityMobileLayout.viewportWidth, true);
+assert.equal(communityMobileLayout.modalScrollWidth <= communityMobileLayout.modalClientWidth, true);
+await screenshot('/tmp/clubs-builder-community-mobile.png');
+
 const relevantErrors = errors.filter((error) => !/favicon/i.test(error));
 assert.deepEqual(relevantErrors, []);
 console.log(JSON.stringify({
   appUrl,
+  communitySetup,
   positionText,
   optimizerToast,
   unreachableToast,
@@ -422,7 +589,9 @@ console.log(JSON.stringify({
   exportCanvas,
   mobileLayout,
   mobilePlaystylesLayout,
-  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-mobile-playstyles.png'],
+  communityDesktopLayout,
+  communityMobileLayout,
+  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-mobile-playstyles.png', '/tmp/clubs-builder-community-desktop.png', '/tmp/clubs-builder-community-mobile.png'],
 }, null, 2));
 
 socket.close();

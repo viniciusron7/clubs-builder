@@ -55,8 +55,12 @@ pelo canvas e pelo clipboard quando a página é aberta diretamente por `file://
 - **Desfazer/refazer** — botões e atalhos Ctrl/Cmd+Z, Ctrl/Cmd+Y e Cmd+Shift+Z.
 - **Compartilhar via URL** (`?b=...`, formato v2 com leitura de links v1) e
   **salvar como imagem** com os OVRs estimados por posição.
+- **Builds da Comunidade** — galeria pública sem conta: o autor informa seu nome
+  e o nome da build, o navegador memoriza o autor e guarda localmente a credencial
+  de exclusão daquela publicação. O backend opcional usa Supabase + Cloudflare
+  Turnstile, com RLS, validação, CORS e limite de publicações.
 
-As 3 abas (Body / PlayStyles / Specializations) abrem **modais**;
+As 4 abas (PlayStyles / Specializations / Body / Community Builds) abrem **modais**;
 a área principal mostra os atributos + o painel de detalhe do atributo selecionado.
 
 ## Estrutura
@@ -79,10 +83,21 @@ clubs-builder/
     optimizer-worker.js # solver multi-position fora da thread da interface
     history.js        # histórico imutável de undo/redo
     share.js          # URL (encode/decode) + export de imagem (canvas)
+    community-config.js # URL e site key públicas da galeria
+    community.js      # cliente da API + cache local + Turnstile
     app.js            # estado + render + eventos
   data/               # dataset UT compacto usado pela interface
+  supabase/           # migration e Edge Function de Community Builds
+  docs/               # ativação e contrato técnico do backend
   tests/              # testes node:test + smoke test no navegador
 ```
+
+## Ativar Builds da Comunidade
+
+A interface já funciona em estado de configuração, mas publicar e listar builds
+depende do backend. Siga [docs/COMMUNITY_SETUP.md](docs/COMMUNITY_SETUP.md).
+As credenciais secretas ficam no Supabase; somente a URL da função e a site key
+pública do Turnstile entram em `js/community-config.js`.
 
 ## Notas
 

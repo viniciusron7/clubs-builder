@@ -1,0 +1,9 @@
+project_id = "clubs-builder"
+
+[functions.community-builds]
+enabled = true
+# This endpoint is intentionally public. POST is protected by Turnstile and
+# rate limiting; DELETE uses a high-entropy per-build management token.
+verify_jwt = false
+entrypoint = "./functions/community-builds/index.ts"
+
