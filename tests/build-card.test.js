@@ -53,6 +53,14 @@ test('card overall follows the primary selected position and stats use category 
   );
 });
 
+test('FUT.GG assets use the image proxy without leaking the builder referrer', () => {
+  assert.equal(
+    Card.assetUrl('2026/player-item/player.webp', 420),
+    'https://game-assets.fut.gg/cdn-cgi/image/quality=88,format=auto,width=420/2026/player-item/player.webp',
+  );
+  assert.equal(Card.assetUrl('https://example.com/player.png'), '');
+});
+
 test('renderer escapes metadata and includes build-specific positions, stars and PlayStyles', () => {
   const html = Card.render({
     info: {
@@ -75,10 +83,10 @@ test('renderer escapes metadata and includes build-specific positions, stars and
       nationId: '14',
     },
     catalog: {
-      rarities: [{ id: 1, name: 'Rare', dominantColor: 'dd9c79', textColor: ['3e281c'], lineColor: ['f4ca91'] }],
-      leagues: [{ id: 13, name: 'Premier League' }],
-      clubs: [{ id: 1, name: 'Arsenal' }],
-      nations: [{ id: 14, name: 'England' }],
+      rarities: [{ id: 1, name: 'Rare', dominantColor: 'dd9c79', textColor: ['3e281c'], lineColor: ['f4ca91'], imagePath: '2026/rarity/1.png' }],
+      leagues: [{ id: 13, name: 'Premier League', imagePath: '2026/league/13.png' }],
+      clubs: [{ id: 1, name: 'Arsenal', imagePath: '2026/club/1.png' }],
+      nations: [{ id: 14, name: 'England', imagePath: '2026/nation/14.png' }],
     },
     playstyles: [{ name: 'Quick Step', icon: 'playstyles/quick-step.png', plus: true }],
   });
@@ -86,8 +94,10 @@ test('renderer escapes metadata and includes build-specific positions, stars and
   assert.match(html, /92/);
   assert.match(html, /ST/);
   assert.match(html, /CAM/);
-  assert.match(html, />4<.*WF/s);
-  assert.match(html, />5<.*SM/s);
+  assert.match(html, /Strong foot, Weak Foot and Skill Moves/);
+  assert.match(html, /<b>4<\/b><i>★<\/i><b>5<\/b>/);
   assert.match(html, /quick-step\.png/);
   assert.match(html, /Premier League/);
+  assert.match(html, /cdn-cgi\/image\/quality=88,format=auto,width=420\/2026\/rarity\/1\.png/);
+  assert.match(html, /referrerpolicy="no-referrer"/);
 });

@@ -563,7 +563,13 @@ await waitFor(`document.readyState === 'complete' && !!window.Community && docum
 errors.length = 0;
 await click('#btn-community-builds');
 await waitFor(`document.querySelectorAll('.community-card').length === 1`);
+await waitFor(`[...document.querySelectorAll('.community-card :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
+  .length >= 5
+  && [...document.querySelectorAll('.community-card :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
+    .every((image) => image.complete && image.naturalWidth > 0)`, 20000);
 assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card').length`), 1);
+assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card-art img').length`), 1);
+assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card-identity img').length`), 3);
 assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Creator control/);
 assert.match(await evaluate(`document.querySelector('.community-card').innerText`), /Alex/);
 assert.equal(await evaluate(`document.querySelectorAll('.community-card [data-community-delete]').length`), 0);
@@ -583,6 +589,10 @@ await click('#btn-publish-build');
 assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'community');
 assert.equal(await evaluate(`!!document.querySelector('#community-publish-form')`), true);
 await waitFor(`document.querySelector('.community-publish-preview .fc-card') && document.querySelector('#community-athlete-name').value.length > 0`);
+await waitFor(`[...document.querySelectorAll('.community-publish-preview :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
+  .length >= 5
+  && [...document.querySelectorAll('.community-publish-preview :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
+    .every((image) => image.complete && image.naturalWidth > 0)`, 20000);
 assert.equal(await evaluate(`!!document.querySelector('[data-community-athlete-picker-toggle]')`), true);
 await click('[data-community-athlete-picker-toggle]');
 await waitFor(`document.querySelectorAll('[data-community-athlete]').length > 0`);
@@ -600,6 +610,10 @@ await evaluate(`(() => {
 await screenshot('/tmp/clubs-builder-community-publisher.png');
 await click('#community-publish-submit');
 await waitFor(`window.__communityMock.posts === 1 && document.querySelectorAll('.community-card').length === 2`);
+await waitFor(`[...document.querySelectorAll('.community-card :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
+  .length >= 10
+  && [...document.querySelectorAll('.community-card :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
+    .every((image) => image.complete && image.naturalWidth > 0)`, 20000);
 assert.equal(await evaluate(`Community.getSavedAuthor()`), 'Vinicius');
 assert.equal(await evaluate(`document.querySelectorAll('[data-community-delete]').length`), 1);
 assert.equal(await evaluate(`window.__communityMock.items[0].card.athleteName.length <= 15`), true);

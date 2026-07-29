@@ -6,6 +6,7 @@ window.BuildCard = (function () {
   'use strict';
 
   const GAME_ASSET_ROOT = 'https://game-assets.fut.gg/';
+  const GAME_ASSET_TRANSFORM = 'cdn-cgi/image/quality=88,format=auto';
   const CATEGORY_STATS = Object.freeze([
     ['pace', 'PAC'],
     ['scoring', 'SHO'],
@@ -52,12 +53,15 @@ window.BuildCard = (function () {
     return isValidCardName(shortened) ? shortened : fallback;
   }
 
-  function assetUrl(path) {
+  function assetUrl(path, width = 300) {
     const value = singleLine(path);
     if (!value) return '';
-    if (/^https:\/\/game-assets\.fut\.gg(?:\/|$)/i.test(value)) return value;
-    if (/^https?:\/\//i.test(value)) return '';
-    return `${GAME_ASSET_ROOT}${value.replace(/^\/+/, '')}`;
+    const isGameAsset = /^https:\/\/game-assets\.fut\.gg(?:\/|$)/i.test(value);
+    if (/^https?:\/\//i.test(value) && !isGameAsset) return '';
+    const relative = value.replace(/^https:\/\/game-assets\.fut\.gg\//i, '').replace(/^\/+/, '');
+    if (relative.startsWith('cdn-cgi/image/')) return `${GAME_ASSET_ROOT}${relative}`;
+    const safeWidth = Math.max(40, Math.min(800, Math.round(+width || 300)));
+    return `${GAME_ASSET_ROOT}${GAME_ASSET_TRANSFORM},width=${safeWidth}/${relative}`;
   }
 
   function catalogItems(catalog, collection) {
@@ -82,7 +86,7 @@ window.BuildCard = (function () {
     return singleLine(item && (item.name || item.label || item.displayName)) || fallback;
   }
 
-  function itemAsset(item) {
+  function itemAsset(item, width = 100) {
     if (!item) return '';
     return assetUrl(
       item.imagePath
@@ -92,6 +96,7 @@ window.BuildCard = (function () {
       || item.image
       || item.logo
       || '',
+      width,
     );
   }
 
@@ -108,6 +113,15 @@ window.BuildCard = (function () {
       if (item && typeof item[key] === 'string') return item[key];
       if (item && Array.isArray(item[key]) && typeof item[key][0] === 'string') return item[key][0];
       if (item && item.colors && typeof item.colors[key] === 'string') return item.colors[key];
+    }
+    return '';
+  }
+
+  function colorAt(item, key, index = 0) {
+    if (!item) return '';
+    if (Array.isArray(item[key]) && typeof item[key][index] === 'string') return item[key][index];
+    if (item.colors && Array.isArray(item.colors[key]) && typeof item.colors[key][index] === 'string') {
+      return item.colors[key][index];
     }
     return '';
   }
@@ -137,11 +151,14 @@ window.BuildCard = (function () {
       surface = '#4a1769'; border = '#ff82f3'; ink = '#fff'; accent = '#63f1c5';
     }
 
+    const text = safeColor(colorCandidate(rarity, ['textColor', 'text', 'foreground']), ink);
     return {
-      surface: safeColor(colorCandidate(rarity, ['backgroundColor', 'background', 'primary', 'dominantColor']), surface),
+      fill: safeColor(colorCandidate(rarity, ['backgroundColor', 'background', 'primary', 'dominantColor']), surface),
       border: safeColor(colorCandidate(rarity, ['borderColor', 'border', 'secondary', 'lineColor']), border),
-      ink: safeColor(colorCandidate(rarity, ['textColor', 'text', 'foreground']), ink),
-      accent: safeColor(colorCandidate(rarity, ['accentColor', 'accent', 'tertiary', 'overallColor']), accent),
+      text,
+      overall: safeColor(colorCandidate(rarity, ['overallColor']) || colorAt(rarity, 'textColor', 0), text),
+      position: safeColor(colorAt(rarity, 'textColor', 1), text),
+      accent: safeColor(colorCandidate(rarity, ['accentColor', 'accent', 'tertiary']), accent),
     };
   }
 
@@ -188,10 +205,10 @@ window.BuildCard = (function () {
   }
 
   function identityBadge(item, fallback, className) {
-    const image = itemAsset(item);
+    const image = itemAsset(item, 80);
     const name = itemName(item, fallback);
     if (image) {
-      return `<span class="fc-card-identity ${esc(className)}" title="${esc(name)}"><img src="${esc(image)}" alt="${esc(name)}" loading="lazy" /></span>`;
+      return `<span class="fc-card-identity ${esc(className)}" title="${esc(name)}"><img src="${esc(image)}" alt="${esc(name)}" loading="lazy" referrerpolicy="no-referrer" /></span>`;
     }
     return `<span class="fc-card-identity ${esc(className)}" title="${esc(name)}"><b>${esc((name || fallback).slice(0, 3).toUpperCase())}</b></span>`;
   }
@@ -217,16 +234,18 @@ window.BuildCard = (function () {
     const positions = Array.isArray(info.positions) ? info.positions.slice(0, 4) : [];
     const primary = primaryPosition(info);
     const alternatives = positions.filter((position) => position !== primary);
-    const image = assetUrl(metadata.athleteImagePath);
-    const frame = itemAsset(rarity);
+    const image = assetUrl(metadata.athleteImagePath, 420);
+    const frame = itemAsset(rarity, 420);
     const stars = info.derived && info.derived.effective || {};
     const skillMoves = Math.max(1, Math.min(5, Math.round(+stars.skill_moves || 0)));
     const weakFoot = Math.max(1, Math.min(5, Math.round(+stars.weak_foot || 0)));
     const stats = categoryStats(info);
     const style = [
-      `--fc-surface:${theme.surface}`,
+      `--fc-fill:${theme.fill}`,
       `--fc-border:${theme.border}`,
-      `--fc-ink:${theme.ink}`,
+      `--fc-ink:${theme.text}`,
+      `--fc-overall:${theme.overall}`,
+      `--fc-position:${theme.position}`,
       `--fc-accent:${theme.accent}`,
     ].join(';');
     const accessibleName = `${metadata.athleteName}, ${cardOverall(info)} overall, ${positions.join(', ') || primary}`;
@@ -235,9 +254,13 @@ window.BuildCard = (function () {
       <div class="fc-card" data-rarity="${esc(itemName(rarity, metadata.rarityId || 'custom'))}" style="${esc(style)}"
         role="img" aria-label="${esc(accessibleName)}">
         <div class="fc-card-surface">
-          ${frame ? `<img class="fc-card-frame" src="${esc(frame)}" alt="" loading="lazy" />` : ''}
-          <span class="fc-card-cut is-one" aria-hidden="true"></span>
-          <span class="fc-card-cut is-two" aria-hidden="true"></span>
+          ${frame ? `<img class="fc-card-frame" src="${esc(frame)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ''}
+          <div class="fc-card-art">
+            ${image
+              ? `<img src="${esc(image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+              : '<span class="fc-card-art-placeholder" aria-hidden="true">◇</span>'}
+          </div>
+          <strong class="fc-card-name">${esc(metadata.athleteName)}</strong>
           <div class="fc-card-rating">
             <strong>${cardOverall(info) || '—'}</strong>
             <span>${esc(primary)}</span>
@@ -245,28 +268,20 @@ window.BuildCard = (function () {
           <div class="fc-card-alt-positions" aria-label="Alternative positions">
             ${alternatives.map((position) => `<span>${esc(position)}</span>`).join('')}
           </div>
-          <div class="fc-card-art">
-            ${image
-              ? `<img src="${esc(image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
-              : '<span class="fc-card-art-placeholder" aria-hidden="true">◇</span>'}
+          <div class="fc-card-side-meta" aria-label="Strong foot, Weak Foot and Skill Moves">
+            <span>R</span>
+            <span><b>${weakFoot}</b><i>★</i><b>${skillMoves}</b></span>
           </div>
-          <div class="fc-card-details">
-            <strong class="fc-card-name">${esc(metadata.athleteName)}</strong>
-            <div class="fc-card-stats">
-              ${stats.map((stat) => `<span><b>${stat.value || '—'}</b><small>${stat.label}</small></span>`).join('')}
-            </div>
-            <div class="fc-card-meta">
-              <span><b>${weakFoot}</b><small>WF</small></span>
-              <span><b>${skillMoves}</b><small>SM</small></span>
-              <span class="fc-card-identities">
-                ${identityBadge(nation, metadata.nationId || 'NAT', 'is-nation')}
-                ${identityBadge(league, metadata.leagueId || 'LG', 'is-league')}
-                ${identityBadge(club, metadata.clubId || 'CLB', 'is-club')}
-              </span>
-            </div>
-            <div class="fc-card-playstyles" aria-label="PlayStyles">
-              ${renderPlaystyles(options.playstyles)}
-            </div>
+          <div class="fc-card-stats">
+            ${stats.map((stat) => `<span><small>${stat.label}</small><b>${stat.value || '—'}</b></span>`).join('')}
+          </div>
+          <div class="fc-card-identities">
+            ${identityBadge(nation, metadata.nationId || 'NAT', 'is-nation')}
+            ${identityBadge(league, metadata.leagueId || 'LG', 'is-league')}
+            ${identityBadge(club, metadata.clubId || 'CLB', 'is-club')}
+          </div>
+          <div class="fc-card-playstyles" aria-label="PlayStyles">
+            ${renderPlaystyles(options.playstyles)}
           </div>
         </div>
       </div>`;

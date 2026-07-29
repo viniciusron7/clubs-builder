@@ -3234,18 +3234,21 @@ body::before {
  * Community player card
  * ========================================================================== */
 .fc-card {
-  --fc-surface: #d8c879;
+  --fc-fill: #d8c879;
   --fc-border: #f6e8a6;
   --fc-ink: #17170f;
+  --fc-overall: var(--fc-ink);
+  --fc-position: var(--fc-ink);
   --fc-accent: #725e1f;
   position: relative;
   width: min(100%, 16rem);
-  aspect-ratio: 800 / 1118;
+  aspect-ratio: .71527778;
+  container-type: inline-size;
   padding: 0;
   overflow: visible;
   color: var(--fc-ink);
   background: transparent;
-  filter: drop-shadow(0 .75rem 1.15rem rgba(0, 0, 0, .28));
+  filter: drop-shadow(0 .9rem 1.3rem rgba(0, 0, 0, .3));
   isolation: isolate;
 }
 
@@ -3254,19 +3257,9 @@ body::before {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  color: var(--fc-ink);
+  font-size: 8cqw;
   background: transparent;
-}
-
-.fc-card-cut {
-  position: absolute;
-  z-index: 0;
-  display: none;
-  width: 72%;
-  height: 28%;
-  border: 1px solid var(--fc-border);
-  opacity: .24;
-  transform: rotate(-24deg);
-  pointer-events: none;
 }
 
 .fc-card-frame {
@@ -3279,68 +3272,72 @@ body::before {
   pointer-events: none;
 }
 
-.fc-card-cut.is-one {
-  top: 9%;
-  right: -36%;
-}
-
-.fc-card-cut.is-two {
-  bottom: 20%;
-  left: -38%;
-  transform: rotate(31deg);
-}
-
 .fc-card-rating {
   position: absolute;
   z-index: 4;
-  top: 15.5%;
-  left: 11.5%;
+  top: 22.8%;
+  left: 21.8%;
   display: grid;
+  width: 20%;
   justify-items: center;
+  color: var(--fc-overall);
   font-family: "Cruyff Sans Condensed", var(--font-display);
-  line-height: .86;
+  line-height: 1;
+  text-align: center;
+  transform: translate(-50%, -50%);
 }
 
 .fc-card-rating strong {
-  font-size: clamp(2rem, 4vw, 2.8rem);
-  font-weight: 500;
-  letter-spacing: -.04em;
+  font-size: 1.73em;
+  font-weight: 700;
+  line-height: .91;
+  letter-spacing: -.035em;
 }
 
 .fc-card-rating span {
-  margin-top: .25rem;
-  font-size: .88rem;
-  font-weight: 800;
+  margin-top: -.04em;
+  color: var(--fc-position);
+  font-size: .83em;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .fc-card-alt-positions {
   position: absolute;
   z-index: 5;
-  top: 15.5%;
-  right: 8%;
+  top: 34.1%;
+  right: 3.96%;
   display: grid;
-  gap: .17rem;
+  width: 12%;
+  gap: .1em;
+  text-align: center;
+  transform: translateY(-50%);
 }
 
 .fc-card-alt-positions span {
-  min-width: 1.7rem;
-  padding: .13rem .25rem;
-  border: 1px solid currentColor;
-  border-radius: .2rem;
-  font-size: .55rem;
-  font-weight: 900;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  padding: .03em 0 .06em;
+  border: .09em solid var(--fc-ink);
+  border-radius: .35em;
+  color: var(--fc-ink);
+  background: var(--fc-fill);
+  font-family: "Cruyff Sans Condensed", var(--font-display);
+  font-size: .73em;
+  font-weight: 700;
   line-height: 1;
-  text-align: center;
 }
 
 .fc-card-art {
   position: absolute;
   z-index: 2;
-  top: 5%;
-  right: 7%;
-  width: 76%;
-  height: 55%;
-  overflow: hidden;
+  top: 2%;
+  left: 50%;
+  width: 98%;
+  height: 65%;
+  transform: translateX(-50%);
 }
 
 .fc-card-art img {
@@ -3348,7 +3345,6 @@ body::before {
   height: 100%;
   object-fit: contain;
   object-position: center bottom;
-  filter: drop-shadow(0 .35rem .28rem rgba(0, 0, 0, .2));
 }
 
 .fc-card-art-placeholder {
@@ -3362,45 +3358,37 @@ body::before {
   opacity: .45;
 }
 
-.fc-card-details {
+.fc-card-name {
   position: absolute;
   z-index: 4;
-  right: 7.5%;
-  bottom: 5.8%;
-  left: 7.5%;
-  display: grid;
-  height: 45%;
-  grid-template-rows: auto auto auto minmax(1.8rem, auto);
-  align-content: end;
-  padding: .55rem .5rem .3rem;
-  border-top: 1px solid color-mix(in srgb, var(--fc-ink) 35%, transparent);
-  background: transparent;
-}
-
-.fc-card-name {
+  top: 67.6%;
+  left: 50%;
+  width: 75.2%;
   overflow: hidden;
-  padding-bottom: .35rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--fc-ink) 28%, transparent);
   font-family: "Cruyff Sans Condensed", var(--font-display);
-  font-size: 1.38rem;
+  font-size: 1em;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: .015em;
+  letter-spacing: 0;
   text-align: center;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  transform: translate(-50%, -50%);
   white-space: nowrap;
 }
 
 .fc-card-stats {
+  position: absolute;
+  z-index: 4;
+  top: 71.6%;
+  left: 50%;
   display: grid;
+  width: 68.8%;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: .15rem;
-  padding: .42rem 0 .35rem;
+  justify-content: space-between;
+  transform: translateX(-50%);
 }
 
-.fc-card-stats > span,
-.fc-card-meta > span:not(.fc-card-identities) {
+.fc-card-stats > span {
   display: grid;
   justify-items: center;
   line-height: 1;
@@ -3408,44 +3396,36 @@ body::before {
 
 .fc-card-stats b {
   font-family: "Cruyff Sans Condensed", var(--font-display);
-  font-size: 1rem;
+  font-size: .92em;
   font-weight: 700;
+  line-height: 1;
 }
 
-.fc-card-stats small,
-.fc-card-meta small {
-  margin-top: .12rem;
-  font-size: .47rem;
-  font-weight: 900;
-  letter-spacing: .02em;
-}
-
-.fc-card-meta {
-  display: grid;
-  min-height: 1.55rem;
-  grid-template-columns: 2rem 2rem minmax(0, 1fr);
-  align-items: center;
-  gap: .18rem;
-  padding: .25rem 0;
-  border-top: 1px solid color-mix(in srgb, var(--fc-ink) 18%, transparent);
-}
-
-.fc-card-meta > span > b {
-  font-size: .82rem;
+.fc-card-stats small {
+  margin-bottom: .2em;
+  font-family: "Cruyff Sans Condensed", var(--font-display);
+  font-size: .58em;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .fc-card-identities {
+  position: absolute;
+  z-index: 4;
+  top: 81.8%;
+  left: 50%;
   display: flex;
-  min-width: 0;
+  width: 100%;
   align-items: center;
-  justify-content: flex-end;
-  gap: .25rem;
+  justify-content: center;
+  gap: .4em;
+  transform: translateX(-50%);
 }
 
 .fc-card-identity {
   display: grid;
-  width: 1.32rem;
-  height: 1.32rem;
+  width: 1.2em;
+  height: 1em;
   flex: 0 0 auto;
   place-items: center;
 }
@@ -3459,29 +3439,82 @@ body::before {
 .fc-card-identity b {
   overflow: hidden;
   max-width: 100%;
-  font-size: .4rem;
+  font-size: .42em;
   text-overflow: clip;
 }
 
-.fc-card-playstyles {
+.fc-card-side-meta {
+  position: absolute;
+  z-index: 5;
+  top: 63.7%;
+  right: 3.96%;
+  display: grid;
+  width: 12%;
+  gap: .1em;
+  color: var(--fc-ink);
+  font-family: "Cruyff Sans Condensed", var(--font-display);
+  font-size: .73em;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  transform: translateY(-50%);
+}
+
+.fc-card-side-meta > span {
   display: flex;
-  min-width: 0;
-  min-height: 1.85rem;
+  width: 100%;
+  min-height: 1.08em;
   align-items: center;
   justify-content: center;
-  gap: .12rem;
+  border: .09em solid var(--fc-ink);
+  border-radius: .35em;
+  background: var(--fc-fill);
+}
+
+.fc-card-side-meta > span:last-child {
+  position: relative;
+  gap: .48em;
+}
+
+.fc-card-side-meta b {
+  width: .52em;
+  font-size: 1em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.fc-card-side-meta i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: .42em;
+  font-style: normal;
+  transform: translate(-50%, -50%);
+}
+
+.fc-card-playstyles {
+  position: absolute;
+  z-index: 5;
+  top: 88.7%;
+  left: 50%;
+  display: flex;
+  width: 72%;
+  min-width: 0;
+  min-height: 1.4em;
+  align-items: center;
+  justify-content: center;
+  gap: .08em;
   overflow: hidden;
-  padding-top: .22rem;
-  border-top: 1px solid color-mix(in srgb, var(--fc-ink) 18%, transparent);
+  transform: translateX(-50%);
 }
 
 .fc-card-playstyle {
   display: grid;
-  width: 1.38rem;
-  height: 1.38rem;
-  flex: 0 1 1.38rem;
+  width: 1.12em;
+  height: 1.12em;
+  flex: 0 1 1.12em;
   place-items: center;
-  border: 1px solid transparent;
+  border: .06em solid transparent;
   border-radius: 50%;
 }
 
@@ -3496,7 +3529,8 @@ body::before {
 }
 
 .fc-card-no-playstyles {
-  font-size: .5rem;
+  color: var(--fc-ink);
+  font-size: .45em;
   font-weight: 800;
   opacity: .55;
   text-transform: uppercase;

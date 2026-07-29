@@ -639,6 +639,14 @@
     const selected = info.positions || [];
     let candidates = (ui.utPlayers || []).filter((player) => {
       const positions = Array.isArray(player.positions) ? player.positions : [];
+      const hasCompleteCardIdentity = !!(
+        player.playerImagePath
+        && player.rarityId != null
+        && player.nationId != null
+        && player.leagueId != null
+        && player.clubId != null
+      );
+      if (!hasCompleteCardIdentity) return false;
       return isGoalkeeper ? positions.includes('GK') : positions.some((position) => OUTFIELD_POSITIONS.includes(position));
     });
     if (selected.length) {
@@ -761,7 +769,7 @@
             const selected = String(player.id) === String(ui.communityAthleteId);
             const image = BC.assetUrl(player.playerImagePath || player.cardImagePath);
             return `<button type="button" data-community-athlete="${esc(player.id)}" aria-pressed="${selected}" class="${selected ? 'is-selected' : ''}">
-              <span class="community-athlete-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" />` : ''}</span>
+              <span class="community-athlete-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ''}</span>
               <strong>${esc(player.cardName || player.name)}</strong>
               <small>${esc(player.positions.join(' / '))} · ${player.overall}</small>
             </button>`;
@@ -805,12 +813,22 @@
     let canDelete = false;
     try { canDelete = !!(api && api.getManageToken(item.id)); } catch (e) {}
     const deleting = ui.communityRemovingId === item.id;
-    const fallbackMetadata = {
+    const fallbackPlayer = item.card ? null : closestCommunityAthlete(info);
+    const fallbackMetadata = fallbackPlayer ? {
+      athleteName: BC.safeCardName(item.buildName || fallbackPlayer.cardName || fallbackPlayer.name || info.archName),
+      utPlayerId: String(fallbackPlayer.id || ''),
+      utPlayerEaId: String(fallbackPlayer.eaId || ''),
+      athleteImagePath: fallbackPlayer.playerImagePath || fallbackPlayer.cardImagePath || '',
+      rarityId: String(fallbackPlayer.rarityId || ''),
+      leagueId: String(fallbackPlayer.leagueId || ''),
+      clubId: String(fallbackPlayer.clubId || ''),
+      nationId: String(fallbackPlayer.nationId || ''),
+    } : {
       athleteName: BC.safeCardName(item.buildName || info.archName),
       rarityId: catalogOptionId('rarities', '', (name) => name.includes('gold')),
-      leagueId: catalogOptionId('leagues', ''),
+      leagueId: '',
       clubId: '',
-      nationId: catalogOptionId('nations', ''),
+      nationId: '',
     };
     const metadata = item.card || fallbackMetadata;
     const normalizedCard = BC.normalizedMetadata(metadata);
