@@ -22,7 +22,9 @@ python3 -m http.server 4173 --bind 0.0.0.0
   for key attributes. The maximum level is **100**, with **3167 total AP**. The
   editor includes +/− controls, a slider, next-point cost, and a breakdown. The
   six outfield categories also display their calculated face-stat OVRs:
-  **PAC, SHO, PAS, DRI, DEF, and PHY**.
+  **PAC, SHO, PAS, DRI, DEF, and PHY**. Skill Moves and Weak Foot are never
+  presented as Key Attributes, but still retain an archetype's internal AP tier
+  discount when the game grants one.
 - **Body** — height and weight (limited by the archetype) adjust attributes using
   the actual formula and calculate **AcceleRATE** (Explosive/Lengthy/Controlled).
 - **Club Facilities** — 34 player Facilities and 42 AI Facilities, with up to
@@ -51,10 +53,11 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Screenshot import** — reads the full 16:9 outfield Attributes screen
   directly in the browser, including all 29 numeric attributes, Skill Moves,
   Weak Foot, and the green Key Attributes used to suggest an archetype. Every
-  result is editable before it is applied. The importer reconstructs purchased
-  levels from the current Body and Club Facilities adjustments, suggests the
-  minimum feasible player level, and applies the import as one undoable change.
-  JPEG, PNG, and WebP files are processed locally and are never uploaded.
+  result is editable before it is applied. Screenshot levels are stored directly
+  as purchased build values; Body and Club Facilities adjustments remain
+  separate in the In-game stats mode. The importer suggests the minimum feasible
+  player level and applies the import as one undoable change. JPEG, PNG, and WebP
+  files are processed locally and are never uploaded.
 - The v2 model was validated against Common/Rare base cards: 93.43% exact and
   99.995% within ±1 across 19,363 outfield players; 88.05% exact and 100% within
   ±1 across 2,528 players rated 75+; and 98.05% exact and 100% within ±1 across

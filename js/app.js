@@ -626,7 +626,7 @@
     source.weight = C.clamp(source.weight, Math.ceil(arch.minWeight), Math.floor(arch.maxWeight));
     source.attributes = {};
     source.playstylePurchases = {};
-    source.inGameStats = true;
+    source.inGameStats = false;
     if (!sameArchetype) {
       source.playstyles = [];
       source.signatures = {};
@@ -646,8 +646,7 @@
     }
 
     const candidate = importSourceBuild(arch);
-    const baseline = C.derive(candidate);
-    const attrs = baseline.categories
+    const attrs = C.baseCategories(arch)
       .filter((category) => category.id !== 'goalkeeping')
       .flatMap((category) => category.attributes);
     const attrById = Object.fromEntries(attrs.map((attr) => [attr.id, attr]));
@@ -669,13 +668,10 @@
         errors.push(`${attrName(id)} must be between ${minObserved} and ${maxObserved}.`);
         return;
       }
-      const adjustment = attr.displayType === 'stars'
-        ? 0
-        : (baseline.bodyAdj[id] || 0) + (baseline.facAdj[id] || 0);
-      const value = rounded - adjustment;
+      const value = rounded;
       purchased[id] = value;
       if (value < attr.baseValue || value > attr.maxValue) {
-        errors.push(`${attrName(id)} cannot reproduce ${rounded} with the current Body and Facilities setup.`);
+        errors.push(`${attrName(id)} is outside the selected archetype's build range.`);
         return;
       }
       cost += C.apCost(attr.tier, attr.baseValue, value);
@@ -700,21 +696,15 @@
     if (build.archetypeId && build.archetypeId !== arch.id) {
       warnings.push(`Applying this screenshot will replace the current ${archName(build.archetypeId)} build with ${archName(arch.id)}.`);
     }
-    const adjustmentCount = attrs.filter((attr) => attr.displayType !== 'stars'
-      && ((baseline.bodyAdj[attr.id] || 0) + (baseline.facAdj[attr.id] || 0)) !== 0).length;
-    if (adjustmentCount) {
-      warnings.push(`Purchased values are reconstructed with the current Body and Club Facilities adjustments for ${adjustmentCount} attributes.`);
-    }
-
     let normalized = null, derived = null;
     if (!errors.length) {
       normalized = C.normalizeBuild(candidate);
-      Object.assign(candidate, normalized.build, { inGameStats: true });
+      Object.assign(candidate, normalized.build, { inGameStats: false });
       derived = C.derive(candidate);
       for (const [id, value] of Object.entries(ui.screenshotValues)) {
-        if (!Number.isFinite(+value) || derived.displayValues[id] == null) continue;
-        if (+derived.displayValues[id] !== Math.round(+value)) {
-          errors.push(`${attrName(id)} would display as ${derived.displayValues[id]}, not ${Math.round(+value)}.`);
+        if (!Number.isFinite(+value) || derived.purchased[id] == null) continue;
+        if (+derived.purchased[id] !== Math.round(+value)) {
+          errors.push(`${attrName(id)} would be stored as ${derived.purchased[id]}, not ${Math.round(+value)}.`);
         }
       }
     }
@@ -731,7 +721,6 @@
       total,
       remaining: total - cost,
       minimumLevel,
-      adjustmentCount,
     };
   }
 
@@ -795,7 +784,6 @@
         const value = ui.screenshotValues[id];
         const status = field.edited ? 'detected' : (field.status || (Number.isFinite(+value) ? 'review' : 'missing'));
         const statusLabel = field.edited ? 'Edited' : status === 'detected' ? 'Detected' : status === 'missing' ? 'Missing' : 'Review';
-        const purchased = Number.isFinite(plan.purchased[id]) ? plan.purchased[id] : '—';
         const stars = id === 'skill_moves' || id === 'weak_foot';
         return `
           <div class="screenshot-import-attribute is-${status}" data-screenshot-row="${id}">
@@ -804,11 +792,10 @@
               <span class="screenshot-import-confidence is-${status}" data-confidence="${status}">${statusLabel}</span>
             </div>
             <div class="screenshot-import-attribute-values">
-              <label class="screenshot-import-value"><small>In game</small>
+              <label class="screenshot-import-value"><small>Build</small>
                 <input data-screenshot-attr="${id}" type="number" inputmode="numeric" min="${stars ? 2 : 1}" max="${stars ? 5 : 99}"
                   value="${Number.isFinite(+value) ? Math.round(+value) : ''}" aria-label="${esc(attrName(id))} detected value" />
               </label>
-              <span class="screenshot-import-value"><small>Build</small><output data-screenshot-purchased="${id}">${purchased}</output></span>
             </div>
           </div>`;
       }).join('');
@@ -852,7 +839,7 @@
           </aside>
           <div class="screenshot-import-results">
             <div class="screenshot-import-review-head">
-              <div><h3>Review detected values</h3><p>The Build column removes the current Body and Facilities adjustments so in-game values stay identical.</p></div>
+              <div><h3>Review detected values</h3><p>Values are imported directly as purchased build attributes.</p></div>
               <span class="screenshot-import-count">${detected} of ${allIds.length}</span>
             </div>
             <div class="screenshot-import-category-grid">${categories}</div>

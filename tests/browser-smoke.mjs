@@ -228,6 +228,8 @@ if (!await evaluate(`!!document.querySelector('[data-screenshot-apply]:not([disa
 assert.equal(await evaluate(`document.querySelector('#screenshot-import-archetype').value`), 'fwd_finisher');
 assert.equal(await evaluate(`document.querySelector('#screenshot-import-level').value`), '96');
 assert.equal(await evaluate(`document.querySelectorAll('.screenshot-import-confidence.is-detected').length`), 31);
+assert.equal(await evaluate(`document.querySelectorAll('.screenshot-import-value output').length`), 0);
+assert.match(await evaluate(`document.querySelector('.screenshot-import-summary').innerText`), /AP remaining\s+22/i);
 await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 900, deviceScaleFactor: 1, mobile: true });
 await delay(75);
 const screenshotImportMobile = await evaluate(`(() => {
@@ -255,6 +257,7 @@ const importedScreenshotBuild = await evaluate(`(() => {
   return {
     level: build.level,
     inGameStats: build.inGameStats,
+    apRemaining: derived.ap.available,
     agility: derived.displayValues.agility,
     balance: derived.displayValues.balance,
     sprintSpeed: derived.displayValues.sprint_speed,
@@ -263,7 +266,8 @@ const importedScreenshotBuild = await evaluate(`(() => {
 })()`);
 assert.deepEqual(importedScreenshotBuild, {
   level: 96,
-  inGameStats: true,
+  inGameStats: false,
+  apRemaining: 22,
   agility: 89,
   balance: 91,
   sprintSpeed: 88,

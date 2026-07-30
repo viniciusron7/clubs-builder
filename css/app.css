@@ -4952,7 +4952,6 @@ body::before {
 }
 
 .screenshot-import-value input,
-.screenshot-import-value output,
 .screenshot-import-level-control input,
 .screenshot-import-level-control select {
   width: 3.5rem;
@@ -4965,13 +4964,6 @@ body::before {
   font-size: .82rem;
   font-weight: 800;
   text-align: center;
-}
-
-.screenshot-import-value output {
-  display: grid;
-  place-items: center;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-app);
 }
 
 .screenshot-import-level-control select {

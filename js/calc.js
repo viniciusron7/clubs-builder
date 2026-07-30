@@ -18,10 +18,11 @@ window.Calc = (function () {
       id: cat.id,
       attributes: cat.attributes.map((attr) => {
         const mod = arch ? arch.modifiers.find((m) => m.attributeId === attr.id) : null;
-        const isKey = !!(arch && arch.keyAttributes.includes(attr.id) && !NON_KEY_ATTRIBUTES.has(attr.id));
+        const receivesKeyDiscount = !!(arch && arch.keyAttributes.includes(attr.id));
+        const isKey = receivesKeyDiscount && !NON_KEY_ATTRIBUTES.has(attr.id);
         const noDiscount = !!(arch && (arch.noDiscountKeyAttributes || []).includes(attr.id));
         let tier = attr.tier;
-        if (isKey && !noDiscount && D.keyTierDiscount[tier]) tier = D.keyTierDiscount[tier];
+        if (receivesKeyDiscount && !noDiscount && D.keyTierDiscount[tier]) tier = D.keyTierDiscount[tier];
         return {
           id: attr.id,
           baseValue: mod ? mod.baseValue : attr.baseValue,

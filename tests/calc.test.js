@@ -227,13 +227,56 @@ test('key attributes marked no-discount use their original AP tier', () => {
 
 test('Skill Moves and Weak Foot are never treated as key attributes', () => {
   const { Calc, DATA } = createContext();
+  const originalTiers = Object.fromEntries(DATA.categories
+    .flatMap((category) => category.attributes)
+    .filter((attr) => ['skill_moves', 'weak_foot'].includes(attr.id))
+    .map((attr) => [attr.id, attr.tier]));
   for (const arch of DATA.archetypes) {
     const derived = Calc.derive(defaultBuild({ archetypeId: arch.id }));
     for (const id of ['skill_moves', 'weak_foot']) {
       const attr = Calc.findAttr(derived.categories, id);
       assert.equal(attr.isKeyAttribute, false, `${arch.id} must not mark ${id} as key`);
+      const receivesDiscount = arch.keyAttributes.includes(id)
+        && !(arch.noDiscountKeyAttributes || []).includes(id);
+      const expectedTier = receivesDiscount
+        ? DATA.keyTierDiscount[originalTiers[id]] || originalTiers[id]
+        : originalTiers[id];
+      assert.equal(attr.tier, expectedTier, `${arch.id} must preserve the internal ${id} AP rule`);
     }
   }
+});
+
+test('reference screenshot build spends AP only on purchased values', () => {
+  const { Calc } = createContext();
+  const attributes = {
+    agility: 89, balance: 91, reactions: 92, ball_control: 95, dribbling: 91, composure: 90,
+    att_position: 90, finishing: 97, shot_power: 97, long_shots: 96, volleys: 75, penalties: 75,
+    vision: 80, crossing: 55, fk_accuracy: 65, short_passing: 85, long_passing: 50, curve: 92,
+    interceptions: 60, heading_accuracy: 75, def_aware: 55, standing_tackle: 50, sliding_tackle: 40,
+    acceleration: 93, sprint_speed: 88, jumping: 80, stamina: 83, strength: 85, aggression: 65,
+    skill_moves: 5, weak_foot: 5,
+  };
+  const purchased = Calc.derive(defaultBuild({
+    archetypeId: 'fwd_finisher',
+    level: 96,
+    attributes,
+  }));
+  const inGame = Calc.derive(defaultBuild({
+    archetypeId: 'fwd_finisher',
+    level: 96,
+    clubLevel: 10,
+    height: 190,
+    weight: 90,
+    facilities: { sports_scientist: 2 },
+    attributes,
+    inGameStats: true,
+  }));
+
+  assert.equal(Calc.findAttr(purchased.categories, 'weak_foot').tier, 'star1');
+  assert.equal(Calc.apCost('star1', 3, 5), 65);
+  assert.equal(Calc.apCostNextPoint(Calc.findAttr(purchased.categories, 'agility')), 20);
+  assert.deepEqual({ ...purchased.ap }, { total: 2904, spent: 2882, available: 22 });
+  assert.equal(inGame.ap.spent, purchased.ap.spent);
 });
 
 test('PlayStyle requirements use purchased values while Facilities grant their PlayStyle automatically', () => {
