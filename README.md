@@ -22,8 +22,7 @@ python3 -m http.server 4173 --bind 0.0.0.0
   for key attributes. The maximum level is **100**, with **3167 total AP**. The
   editor includes +/− controls, a slider, next-point cost, and a breakdown. The
   six outfield categories also display their calculated face-stat OVRs:
-  **PAC, SHO, PAS, DRI, DEF, and PHY**, using effective values after body and
-  player-Facility adjustments.
+  **PAC, SHO, PAS, DRI, DEF, and PHY**.
 - **Body** — height and weight (limited by the archetype) adjust attributes using
   the actual formula and calculate **AcceleRATE** (Explosive/Lengthy/Controlled).
 - **Club Facilities** — 34 player Facilities and 42 AI Facilities, with up to
@@ -41,10 +40,14 @@ python3 -m http.server 4173 --bind 0.0.0.0
   the 4 signature slots with its PlayStyle+.
 - **Positions + estimated OVR** — select one or more outfield positions; GK is
   automatic for goalkeepers. Each position is calculated independently by
-  `js/weights.js` using purchased attributes only:
-  `OVR = floor(intercept + Σ weight·attribute) - 1`, clamped to 1–99. Height,
-  weight, and Facilities affect in-match attributes, not the estimated lobby
-  OVR. The expected tolerance is ±1.
+  `js/weights.js`:
+  `OVR = floor(intercept + Σ weight·attribute) - 1`, clamped to 1–99. The
+  expected tolerance is ±1.
+- **In-game stats** — a persisted toggle switches attribute values, category
+  face stats, position OVRs, the optimizer, and Max Sum between purchased
+  values and effective values after body and player-Facility adjustments.
+  Optimization still spends AP on purchased levels and stops before a positive
+  adjustment would push an effective attribute past 99.
 - The v2 model was validated against Common/Rare base cards: 93.43% exact and
   99.995% within ±1 across 19,363 outfield players; 88.05% exact and 100% within
   ±1 across 2,528 players rated 75+; and 98.05% exact and 100% within ±1 across
@@ -70,7 +73,8 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Maximize Attribute Sum** ("Σ Max Sum" button) — select attributes (chips with
   All/None) and an AP budget. AP is distributed to **maximize the sum** of those
   attributes by purchasing the cheapest points first. This is independent of
-  position and preserves existing upgrades as a floor.
+  position and preserves existing upgrades as a floor. With In-game stats
+  active, the reported sum and useful purchase caps use effective values.
 - **UT players** — compact 80+ list, with costs calculated using the same editor
   tiers and values capped at the archetype maximum.
 - **Undo/redo** — buttons and shortcuts Ctrl/Cmd+Z, Ctrl/Cmd+Y, and Cmd+Shift+Z.
@@ -88,6 +92,8 @@ python3 -m http.server 4173 --bind 0.0.0.0
   each build, and locally retain its deletion credential. The backend uses
   Supabase and Cloudflare Turnstile with RLS, catalog validation, CORS, and
   publication limits.
+  Published cards preserve the build's In-game stats mode, so their face stats
+  use the same purchased or effective values shown by the builder.
 
 The home page displays Community Builds and a **Create Build** action. The four
 configuration tabs (PlayStyles / Specializations / Facilities / Body) open **modals** inside

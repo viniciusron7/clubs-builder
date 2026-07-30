@@ -22,6 +22,7 @@ test('v2 share links preserve Facilities and PlayStyle purchases while v1 remain
   const { Share } = createContext(['js/data.js', 'js/share.js']);
   const build = defaultBuild({
     clubLevel: 10,
+    inGameStats: true,
     facilities: { equipment_manager: 1 },
     aiFacilities: { ai_gk_goalkeeping_coach: 2 },
     positions: ['ST', 'CAM'],
@@ -34,6 +35,7 @@ test('v2 share links preserve Facilities and PlayStyle purchases while v1 remain
   });
   const decoded = Share.decode(Share.encode(build));
   assert.equal(decoded.clubLevel, build.clubLevel);
+  assert.equal(decoded.inGameStats, true);
   assert.equal(JSON.stringify(decoded.facilities), JSON.stringify(build.facilities));
   assert.equal(JSON.stringify(decoded.aiFacilities), JSON.stringify(build.aiFacilities));
   assert.equal(JSON.stringify(decoded.positions), JSON.stringify(build.positions));
@@ -46,5 +48,6 @@ test('v2 share links preserve Facilities and PlayStyle purchases while v1 remain
   assert.equal(JSON.stringify(decodedLegacy.aiFacilities), JSON.stringify({ old_ai: 2 }));
   assert.equal(decodedLegacy.clubLevel, 10);
   assert.equal(decodedLegacy.level, 50);
+  assert.equal(decodedLegacy.inGameStats, false);
   assert.equal(Share.decode('not-valid-base64'), null);
 });

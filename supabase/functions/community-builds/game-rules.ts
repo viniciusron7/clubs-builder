@@ -12,6 +12,7 @@ export type GameBuild = {
   clubLevel: number;
   height: number;
   weight: number;
+  inGameStats: boolean;
   attributes: Record<string, number>;
   facilities: Record<string, number>;
   aiFacilities: Record<string, number>;

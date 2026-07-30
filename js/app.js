@@ -14,6 +14,7 @@
     return {
       archetypeId: null, level: 1, clubLevel: 1,
       height: D.defaultHeight, weight: D.defaultWeight,
+      inGameStats: false,
       attributes: {}, facilities: {}, aiFacilities: {}, playstyles: [], playstylePurchases: {}, signatures: {}, positions: [], disabledAttrs: [], sumExcluded: [],
     };
   }
@@ -244,6 +245,8 @@
   function renderPositions(d) {
     const bar = $('#positions-bar');
     if (!d.arch) { bar.innerHTML = '<div class="text-sm text-t-muted">Select an archetype to set positions and overall.</div>'; return; }
+    const inGameStats = !!d.inGameStats;
+    const statsMode = inGameStats ? 'in-game stats, including Body and Club Facilities' : 'purchased attributes';
     const availablePositions = d.arch.position === 'GK' ? ['GK'] : OUTFIELD_POSITIONS;
     const weightProfile = build.positions.length ? C.overallWeightProfile(build.positions, d) : null;
     const weightContext = weightProfile && weightProfile.weightedPositions.join(' / ');
@@ -256,7 +259,7 @@
     let summary = '';
     if (build.positions.length) {
       const ovr = C.overallForPositions(build.positions, d);
-      summary = `<div class="overall-badge text-center leading-none" title="Estimate based on purchased attributes; expected tolerance ±1"><div class="text-[10px] text-t-muted uppercase mb-0.5">${build.positions.length > 1 ? 'Lowest Est. OVR' : 'Est. OVR'} <span class="normal-case">±1</span></div><div class="text-2xl font-bold text-accent-light">${ovr}</div></div>`;
+      summary = `<div class="overall-badge text-center leading-none" title="Estimate based on ${statsMode}; expected tolerance ±1"><div class="text-[10px] text-t-muted uppercase mb-0.5">${build.positions.length > 1 ? 'Lowest Est. OVR' : 'Est. OVR'} <span class="normal-case">±1</span></div><div class="text-2xl font-bold text-accent-light">${ovr}</div></div>`;
     }
     bar.innerHTML = `
       <div class="position-picker flex flex-wrap items-center gap-1.5">
@@ -266,6 +269,12 @@
           class="weight-toggle ${ui.showWeights ? 'is-on' : ''}" type="button">
           <span class="weight-toggle-track" aria-hidden="true"><span></span></span>
           <span>Weights${ui.showWeights && weightContext ? ` · ${esc(weightContext)}` : ''}</span>
+        </button>
+        <button id="btn-in-game-stats" role="switch" aria-checked="${inGameStats}"
+          title="Include Body and Club Facilities adjustments in attribute values, category OVRs and optimization"
+          class="weight-toggle in-game-toggle ${inGameStats ? 'is-on' : ''}" type="button">
+          <span class="weight-toggle-track" aria-hidden="true"><span></span></span>
+          <span>In-game stats</span>
         </button>
       </div>
       <div class="position-actions flex items-center gap-2">
@@ -312,7 +321,9 @@
     return numericVisibleAttributes(d).map((attr) => attr.id);
   }
   function currentAttributeSum(d) {
-    return numericVisibleAttributes(d).reduce((total, attr) => total + attr.currentValue, 0);
+    const values = d.displayValues || d.purchased || {};
+    return numericVisibleAttributes(d).reduce((total, attr) =>
+      total + (Number.isFinite(+values[attr.id]) ? +values[attr.id] : attr.currentValue), 0);
   }
   const categoryOverallLabel = Object.freeze({
     pace: 'PAC',
@@ -345,7 +356,12 @@
       </section>`).join('');
   }
   function attributeRow(a, d, weightProfile) {
-    const body = d.bodyAdj[a.id] || 0, facility = d.facAdj[a.id] || 0, cv = a.currentValue;
+    const body = d.bodyAdj[a.id] || 0, facility = d.facAdj[a.id] || 0;
+    const inGameStats = !!d.inGameStats && a.displayType !== 'stars';
+    const shownValue = d.displayValues && Number.isFinite(+d.displayValues[a.id])
+      ? +d.displayValues[a.id]
+      : a.currentValue;
+    const cv = inGameStats ? shownValue : a.currentValue;
     const selected = ui.selectedAttr === a.id;
     const tag = (v) => v === 0 ? '' : `<span class="font-bold text-sm min-w-3 ${v < 0 ? 'text-state-error' : 'text-state-success'}">${v > 0 ? '+' : ''}${v}</span>`;
     const nameEl = a.isKeyAttribute
@@ -355,11 +371,15 @@
     const weightText = weight == null ? '' : weight === 0 ? '0%' : `${(weight * 100).toFixed(weight * 100 >= 1 ? 1 : 2)}%`;
     const weightEl = weight == null ? '' : `<span class="attr-weight ${weight === 0 ? 'is-zero' : ''}"
       title="${weightProfile.mode === 'minmax' ? `Combined coefficient for ${esc(weightProfile.weightedPositions.join(' / '))}` : `OVR coefficient for ${esc(weightProfile.positions[0])}`}">${weightText}</span>`;
+    const adjustmentTags = inGameStats ? '' : `${tag(body)}${tag(facility)}`;
+    const valueTitle = inGameStats
+      ? `${attrName(a.id)}: purchased ${a.currentValue}, Body ${body >= 0 ? '+' : ''}${body}, Facilities ${facility >= 0 ? '+' : ''}${facility}, in-game ${cv}`
+      : '';
     return `
-      <button type="button" data-attr="${a.id}" aria-pressed="${selected}" class="attribute-row w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
+      <button type="button" data-attr="${a.id}" aria-pressed="${selected}" ${valueTitle ? `title="${esc(valueTitle)}"` : ''} class="attribute-row ${inGameStats ? 'is-in-game' : ''} w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
         <span class="attribute-row-top flex items-center justify-between mb-1.5 w-full">
           <span class="attribute-row-name flex items-center gap-2">${nameEl}</span>
-          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${tag(body)}${tag(facility)}<span class="attribute-value text-base font-bold text-white">${cv}</span></span>
+          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${adjustmentTags}<span class="attribute-value ${inGameStats ? 'is-in-game' : ''} text-base font-bold text-white" ${inGameStats ? `style="--in-game-stat-color:${C.barColor(cv)}"` : ''}>${cv}</span></span>
         </span>
         ${attrMeter(a, cv)}
       </button>`;
@@ -444,6 +464,10 @@
     let attr = C.findAttr(d.categories, ui.selectedAttr);
     if (!attr) return placeholder('Select an attribute.');
     const body = d.bodyAdj[attr.id] || 0, facility = d.facAdj[attr.id] || 0, eff = d.effective[attr.id];
+    const inGameStats = !!d.inGameStats && attr.displayType !== 'stars';
+    const displayValue = inGameStats && d.displayValues && Number.isFinite(+d.displayValues[attr.id])
+      ? +d.displayValues[attr.id]
+      : attr.currentValue;
     const nextCost = C.apCostNextPoint(attr);
     const atMax = attr.currentValue >= attr.maxValue, atMin = attr.currentValue <= attr.baseValue;
     const canAfford = nextCost != null && d.ap.available >= nextCost;
@@ -465,8 +489,8 @@
       ${panelHead(attrName(attr.id), true)}
       <div class="attribute-editor p-4 space-y-4">
         <div class="attribute-editor-overview flex items-end justify-between">
-          <div><div class="attribute-editor-kicker text-xs text-t-muted uppercase">Current</div><div id="attr-readout" class="attribute-editor-value text-4xl font-bold" style="color:${C.barColor(attr.currentValue)}">${attr.currentValue}</div></div>
-          <div class="attribute-editor-limits text-right text-sm text-t-muted"><div>Base ${attr.baseValue}</div><div>Max ${attr.maxValue}</div><div class="uppercase text-xs mt-1">tier ${attr.tier.replace('tier', '').replace('star', '★')}</div></div>
+          <div><div class="attribute-editor-kicker text-xs text-t-muted uppercase">${inGameStats ? 'In-game' : 'Current'}</div><div id="attr-readout" class="attribute-editor-value text-4xl font-bold" style="color:${C.barColor(displayValue)}">${displayValue}</div></div>
+          <div class="attribute-editor-limits text-right text-sm text-t-muted">${inGameStats ? `<div>Purchased ${attr.currentValue}</div>` : ''}<div>Base ${attr.baseValue}</div><div>Max ${attr.maxValue}</div><div class="uppercase text-xs mt-1">tier ${attr.tier.replace('tier', '').replace('star', '★')}</div></div>
         </div>
         <div class="attribute-editor-controls flex items-center gap-2">
           <button data-attr-dec aria-label="Decrease ${esc(attrName(attr.id))}" class="flex-1 py-2 rounded-lg font-bold ${atMin ? 'bg-app-card text-t-disabled cursor-not-allowed' : 'bg-app-card hover:bg-b-primary text-white'}" ${atMin ? 'disabled' : ''}>−</button>
@@ -672,10 +696,11 @@
 
   function playerAttributeScore(player, d) {
     const attributes = player.attributes || {};
+    const displayValues = d.displayValues || d.effective || {};
     const categoryDistances = CARD_ATTRIBUTE_GROUPS.map((ids) => {
       const differences = ids
-        .filter((id) => Number.isFinite(+attributes[id]) && Number.isFinite(+d.effective[id]))
-        .map((id) => ((+attributes[id] - +d.effective[id]) / 98) ** 2);
+        .filter((id) => Number.isFinite(+attributes[id]) && Number.isFinite(+displayValues[id]))
+        .map((id) => ((+attributes[id] - +displayValues[id]) / 98) ** 2);
       if (!differences.length) return 1;
       return Math.sqrt(differences.reduce((sum, value) => sum + value, 0) / differences.length);
     });
@@ -1665,6 +1690,9 @@
   function optimizeModal(d) {
     const remaining = Math.max(0, d.ap.total - d.ap.spent);
     const multi = build.positions.length > 1;
+    const modeNote = d.inGameStats
+      ? 'In-game stats are active: Body and Club Facilities boosts count toward OVR, and upgrades stop when the effective value reaches 99.'
+      : 'Purchased stats are active: Body and Club Facilities adjustments do not count toward this optimization.';
     const posText = build.positions.map((position) => `${position} ${C.overallForPosition(position, d)}`).join(' · ');
     const considered = [];
     for (const c of d.categories) for (const a of c.attributes) {
@@ -1678,6 +1706,7 @@
     return `
       <div class="space-y-5 max-w-2xl">
         <div class="text-sm text-t-muted">Positions: <span class="text-white font-bold">${esc(posText)}</span>${multi ? ' <span class="text-[11px] text-feat-special">· optimizer maximizes the lowest listed-position OVR</span>' : ''}</div>
+        <p class="optimizer-stats-mode ${d.inGameStats ? 'is-on' : ''}">${esc(modeNote)}</p>
         <div class="space-y-3">
           <label class="block bg-app-bg border border-b-primary rounded-xl p-3 cursor-pointer">
             <div class="flex items-center gap-2 mb-2"><input type="radio" name="opt-mode" value="max" checked class="accent-btn-blue" /><span class="font-bold text-white">${multi ? 'Maximize lowest overall' : 'Maximize overall'} — given AP</span></div>
@@ -1772,6 +1801,9 @@
   // ---- Maximize attribute sum modal ----
   function maxSumModal(d) {
     const remaining = Math.max(0, d.ap.total - d.ap.spent);
+    const modeCopy = d.inGameStats
+      ? 'Effective values include Body and Club Facilities boosts; AP is not spent past an effective value of 99.'
+      : 'The total uses purchased attribute values without Body or Club Facilities adjustments.';
     const considered = sumConsidered(d);
     const chip = (id) => {
       const off = build.sumExcluded.includes(id);
@@ -1781,6 +1813,7 @@
     return `
       <div class="space-y-5 max-w-2xl">
         <p class="text-sm text-t-muted">Distributes AP to <span class="text-white font-bold">maximize the total</span> of the chosen attributes — buys the cheapest points first (each archetype has its own per-attribute AP costs).</p>
+        <p class="optimizer-stats-mode ${d.inGameStats ? 'is-on' : ''}">${esc(modeCopy)}</p>
         <div class="flex items-center gap-2">
           <span class="text-sm text-t-secondary font-medium">AP to spend:</span>
           <input id="sum-ap" type="number" min="0" value="${remaining}" aria-label="AP to spend" class="w-28 px-2 py-1 bg-app-card border border-b-primary rounded text-white text-center" />
@@ -2144,8 +2177,11 @@
     if (!attr) return;
     const value = C.affordableTarget(attr, d.ap.available, parseInt(input.value, 10) || attr.baseValue);
     if (String(value) !== input.value) input.value = value;
+    const displayValue = d.inGameStats && attr.displayType !== 'stars'
+      ? C.clamp(value + (d.bodyAdj[attr.id] || 0) + (d.facAdj[attr.id] || 0), 1, 99)
+      : value;
     const readout = $('#attr-readout');
-    if (readout) { readout.textContent = value; readout.style.color = C.barColor(value); }
+    if (readout) { readout.textContent = displayValue; readout.style.color = C.barColor(displayValue); }
   }
 
   // Same approach for body controls: one drag becomes ONE history entry, not twenty.
@@ -2288,7 +2324,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-in-game-stats,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -2387,6 +2423,9 @@
       if (t.dataset.filter) { ui.filter = t.dataset.filter; return renderArchetypes(); }
       if (t.dataset.pos) return togglePosition(t.dataset.pos);
       if (t.id === 'btn-weights') { ui.showWeights = !ui.showWeights; return render(); }
+      if (t.id === 'btn-in-game-stats') {
+        return commitBuildChange(() => { build.inGameStats = !build.inGameStats; });
+      }
       if (t.id === 'btn-optimize') return openModal('optimize', t);
       if (t.id === 'opt-run') return runOptimize();
       if (t.hasAttribute('data-modal')) return openModal(t.dataset.modal, t);

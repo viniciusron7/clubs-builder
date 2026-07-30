@@ -19,11 +19,12 @@ window.Share = (function () {
   }
 
   // ---- build <-> compact string ----
-  // v2: {v:2, a:archetypeId, l:level, c:clubLevel, h:height, w:weight,
+  // v2: {v:2, a:archetypeId, l:level, c:clubLevel, h:height, w:weight, ig:1,
   //      t:{attrId:val}, f:{playerFacilityId:star}, af:{aiFacilityId:star},
   //      p:[playstyleIds], pu:{playstyleId:{before,after}}}
   function encode(build) {
     const obj = { v: 2, a: build.archetypeId, l: build.level, c: build.clubLevel, h: build.height, w: build.weight };
+    if (build.inGameStats === true) obj.ig = 1;
     if (build.attributes && Object.keys(build.attributes).length) obj.t = build.attributes;
     if (build.facilities && Object.keys(build.facilities).length) obj.f = build.facilities;
     if (build.aiFacilities && Object.keys(build.aiFacilities).length) obj.af = build.aiFacilities;
@@ -44,6 +45,7 @@ window.Share = (function () {
         clubLevel: o.c != null ? o.c : 1,
         height: o.h != null ? o.h : window.DATA.defaultHeight,
         weight: o.w != null ? o.w : window.DATA.defaultWeight,
+        inGameStats: o.ig === 1,
         attributes: o.t || {},
         facilities: o.f || {},
         aiFacilities: o.af || {},
@@ -183,7 +185,9 @@ window.Share = (function () {
       ctx.fillText((L.category[c.id] || c.id).toUpperCase(), x + cardPad, y + cardPad + 16);
       let ry = y + cardPad + catHeadH;
       c.attributes.forEach((a) => {
-        const val = a.currentValue;
+        const val = d.displayValues && d.displayValues[a.id] != null
+          ? d.displayValues[a.id]
+          : a.currentValue;
         ctx.fillStyle = a.isKeyAttribute ? PAL.accent : PAL.sec;
         ctx.font = '600 14px system-ui';
         ctx.fillText((a.isKeyAttribute ? '★ ' : '') + attrName(a.id), x + cardPad, ry + 14);

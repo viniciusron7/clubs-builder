@@ -98,36 +98,30 @@ test('category OVR formulas use the discovered weights and half-up rounding', ()
   assert.equal(Calc.categoryOverall('other', values), null);
 });
 
-test('derived category OVRs use body-adjusted effective attribute values', () => {
+test('category OVRs follow the purchased or in-game stats mode', () => {
   const { Calc } = createContext();
-  const standard = Calc.derive(defaultBuild({
+  const purchased = Calc.derive(defaultBuild({
     archetypeId: 'fwd_finisher',
     height: 180,
     weight: 75,
   }));
   assert.deepEqual(
-    { ...standard.categoryOveralls },
-    {
-      pace: 73,
-      scoring: 72,
-      passing: 63,
-      ball_control: 72,
-      defending: 55,
-      physical: 68,
-    },
+    { ...purchased.categoryOveralls },
+    { ...Calc.categoryOverallMap(purchased.purchased) },
   );
   assert.deepEqual(
-    { ...standard.categoryOveralls },
-    { ...Calc.categoryOverallMap(standard.effective) },
+    { ...purchased.displayValues },
+    { ...purchased.purchased },
   );
 
-  const changedBody = Calc.derive(defaultBuild({
+  const inGame = Calc.derive(defaultBuild({
     archetypeId: 'fwd_finisher',
     height: 200,
     weight: 100,
+    inGameStats: true,
   }));
   assert.deepEqual(
-    { ...changedBody.categoryOveralls },
+    { ...inGame.categoryOveralls },
     {
       pace: 70,
       scoring: 72,
@@ -137,7 +131,15 @@ test('derived category OVRs use body-adjusted effective attribute values', () =>
       physical: 72,
     },
   );
-  assert.notDeepEqual(changedBody.categoryOveralls, standard.categoryOveralls);
+  assert.deepEqual(
+    { ...inGame.categoryOveralls },
+    { ...Calc.categoryOverallMap(inGame.effective) },
+  );
+  assert.deepEqual(
+    { ...inGame.displayValues },
+    { ...inGame.effective },
+  );
+  assert.notDeepEqual(inGame.categoryOveralls, purchased.categoryOveralls);
 });
 
 test('position order, body and Facilities do not change estimated positional OVR', () => {
@@ -156,6 +158,29 @@ test('position order, body and Facilities do not change estimated positional OVR
   assert.equal(Calc.overallForPosition('ST', first), Calc.overallForPosition('ST', second));
   assert.equal(Calc.overallForPosition('CAM', first), Calc.overallForPosition('CAM', second));
   assert.equal(second.facAdj.acceleration, 2);
+});
+
+test('in-game positional OVR includes body and Club Facility adjustments', () => {
+  const { Calc } = createContext();
+  const base = defaultBuild({
+    positions: ['ST', 'CAM'],
+    attributes: { finishing: 92, reactions: 90, short_passing: 88 },
+    inGameStats: true,
+  });
+  const adjusted = {
+    ...base,
+    clubLevel: 10,
+    height: 190,
+    weight: 90,
+    facilities: { sports_scientist: 2 },
+  };
+  const first = Calc.derive(base);
+  const second = Calc.derive(adjusted);
+  assert.notEqual(
+    Calc.overallRawForPosition('ST', first),
+    Calc.overallRawForPosition('ST', second),
+  );
+  assert.equal(second.inGameStats, true);
 });
 
 test('displayed OVR weights use the selected position or average every selected position', () => {
@@ -281,15 +306,24 @@ test('normalization enforces AP, shared Facility budget, one specialization and 
   assert.deepEqual([...normalized.positions], ['GK']);
 });
 
-test('player Facilities boost effective values and category OVRs while AI Facilities only consume budget', () => {
+test('normalization keeps only an explicit in-game stats mode', () => {
   const { Calc } = createContext();
-  const base = Calc.derive(defaultBuild({ clubLevel: 10 }));
+  assert.equal(Calc.normalizeBuild(defaultBuild({ inGameStats: true })).build.inGameStats, true);
+  assert.equal(Calc.normalizeBuild(defaultBuild({ inGameStats: false })).build.inGameStats, false);
+  assert.equal(Calc.normalizeBuild(defaultBuild({ inGameStats: 1 })).build.inGameStats, false);
+});
+
+test('player Facilities boost in-game values and category OVRs while AI Facilities only consume budget', () => {
+  const { Calc } = createContext();
+  const base = Calc.derive(defaultBuild({ clubLevel: 10, inGameStats: true }));
   const withPlayer = Calc.derive(defaultBuild({
     clubLevel: 10,
+    inGameStats: true,
     facilities: { sports_scientist: 1 },
   }));
   const withAi = Calc.derive(defaultBuild({
     clubLevel: 10,
+    inGameStats: true,
     aiFacilities: { ai_gk_goalkeeping_coach: 1 },
   }));
   assert.equal(withPlayer.facAdj.acceleration, 2);
@@ -405,6 +439,62 @@ test('Max sum matches exact group knapsack across every archetype and AP curve',
     }
   }
   assert.equal(checked, DATA.archetypes.length * 12);
+});
+
+test('in-game Max sum stops buying when a positive adjustment reaches 99', () => {
+  const { Calc } = createContext();
+  const common = {
+    archetypeId: 'mid_spark',
+    clubLevel: 10,
+    height: 175,
+    weight: 75,
+    facilities: { sports_scientist: 2 },
+  };
+  const purchased = Calc.derive(defaultBuild(common));
+  const inGame = Calc.derive(defaultBuild({ ...common, inGameStats: true }));
+  const purchasedResult = Calc.maximizeSum(purchased, { include: ['acceleration'], budget: 100000 });
+  const inGameResult = Calc.maximizeSum(inGame, { include: ['acceleration'], budget: 100000 });
+
+  assert.equal(purchasedResult.values.acceleration, 99);
+  assert.equal(purchasedResult.sum, 99);
+  assert.equal(inGameResult.values.acceleration, 94);
+  assert.equal(inGameResult.sum, 99);
+  assert.equal(inGameResult.points, 19);
+});
+
+test('in-game optimizer caps purchased values before effective saturation', async () => {
+  const context = createContext();
+  const { Calc } = context;
+  context.OVERALL_MODEL = {
+    version: 2,
+    gameCalibrationOffset: 0,
+    limits: { min: 1, max: 99 },
+    positions: { P: { intercept: 0, weights: { synthetic: 1 } } },
+  };
+  const derived = {
+    inGameStats: true,
+    bodyAdj: {},
+    facAdj: { synthetic: 5 },
+    categories: [{
+      id: 'synthetic',
+      attributes: [{
+        id: 'synthetic',
+        tier: 'tier0',
+        baseValue: 75,
+        currentValue: 75,
+        maxValue: 99,
+      }],
+    }],
+  };
+  const result = await Calc.optimize(derived, {
+    positions: ['P'],
+    mode: 'max',
+    additionalAP: 100000,
+    disabled: [],
+  });
+
+  assert.equal(result.values.synthetic, 94);
+  assert.equal(result.overall, 99);
 });
 
 test('single-position optimizer is exact and treats AP as a ceiling', async () => {

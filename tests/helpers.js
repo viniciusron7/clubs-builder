@@ -32,6 +32,7 @@ function defaultBuild(overrides = {}) {
     clubLevel: 1,
     height: 180,
     weight: 75,
+    inGameStats: false,
     attributes: {},
     facilities: {},
     aiFacilities: {},

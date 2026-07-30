@@ -302,7 +302,12 @@ window.Calc = (function () {
     let s = f.intercept || 0;
     for (const c of derived.categories) for (const a of c.attributes) {
       const w = f.weights[PESO_KEY[a.id] || a.id] || 0;
-      if (w) s += w * (values && values[a.id] != null ? values[a.id] : a.currentValue);
+      if (!w) continue;
+      const purchased = values && values[a.id] != null ? values[a.id] : a.currentValue;
+      const adjustment = derived.inGameStats
+        ? (derived.bodyAdj && derived.bodyAdj[a.id] || 0) + (derived.facAdj && derived.facAdj[a.id] || 0)
+        : 0;
+      s += w * clamp(purchased + adjustment, 1, 99);
     }
     return s;
   }
@@ -839,7 +844,19 @@ window.Calc = (function () {
       const weights = positions.map((pos) => pesoFor(pos, a.id));
       const w = weights[0] || 0;
       if (weights.some((x) => x > 0) && !disabled.has(a.id)) {
-        attrs.push({ id: a.id, tier: a.tier, max: a.maxValue, base: a.baseValue, val: a.currentValue, w, weights });
+        const adjustment = derived.inGameStats
+          ? (derived.bodyAdj[a.id] || 0) + (derived.facAdj[a.id] || 0)
+          : 0;
+        const usefulMax = Math.min(a.maxValue, 99 - Math.max(0, adjustment));
+        attrs.push({
+          id: a.id,
+          tier: a.tier,
+          max: Math.max(a.currentValue, usefulMax),
+          base: a.baseValue,
+          val: a.currentValue,
+          w,
+          weights,
+        });
       }
     }
     const maxPossibleCost = attrs.reduce((sum, a) => sum + apCost(a.tier, a.val, a.max), 0);
@@ -952,9 +969,22 @@ window.Calc = (function () {
     const include = new Set(opts.include);
     const attrs = [];
     for (const c of derived.categories) for (const a of c.attributes) {
-      if (include.has(a.id)) attrs.push({ id: a.id, tier: a.tier, max: a.maxValue, base: a.baseValue, val: a.currentValue });
+      if (!include.has(a.id)) continue;
+      const adjustment = derived.inGameStats
+        ? (derived.bodyAdj[a.id] || 0) + (derived.facAdj[a.id] || 0)
+        : 0;
+      const usefulMax = Math.min(a.maxValue, 99 - Math.max(0, adjustment));
+      attrs.push({
+        id: a.id,
+        tier: a.tier,
+        max: Math.max(a.currentValue, usefulMax),
+        base: a.baseValue,
+        val: a.currentValue,
+        adjustment,
+      });
     }
-    const startSum = attrs.reduce((s, a) => s + a.val, 0);
+    const activeValue = (attr) => clamp(attr.val + attr.adjustment, 1, 99);
+    const startSum = attrs.reduce((sum, attr) => sum + activeValue(attr), 0);
     let added = 0;
     while (true) {
       let best = null, bestCost = Infinity;
@@ -967,7 +997,7 @@ window.Calc = (function () {
       best.val++; added += bestCost;
     }
     const values = {}; let sum = 0;
-    attrs.forEach((a) => { values[a.id] = a.val; sum += a.val; });
+    attrs.forEach((a) => { values[a.id] = a.val; sum += activeValue(a); });
     return { values, added, sum, points: sum - startSum };
   }
 
@@ -1001,6 +1031,7 @@ window.Calc = (function () {
       archetypeId: arch ? arch.id : null,
       level: clamp(Number.isFinite(+source.level) ? Math.round(+source.level) : 1, 1, D.maxLevel),
       clubLevel,
+      inGameStats: source.inGameStats === true,
       height: D.defaultHeight,
       weight: D.defaultWeight,
       attributes: {},
@@ -1134,6 +1165,7 @@ window.Calc = (function () {
       archetypeId: source.archetypeId || null,
       level: source.level != null ? source.level : 1,
       clubLevel: source.clubLevel != null ? source.clubLevel : validClubLevels[0],
+      inGameStats: source.inGameStats === true,
       height: source.height != null ? source.height : D.defaultHeight,
       weight: source.weight != null ? source.weight : D.defaultWeight,
       attributes: source.attributes || {},
@@ -1170,7 +1202,11 @@ window.Calc = (function () {
       purchased[a.id] = a.currentValue;
       eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0) + (facAdj[a.id] || 0), 1, 99);
     }));
-    const categoryOveralls = categoryOverallMap(eff);
+    const inGameStats = build.inGameStats === true;
+    const displayValues = inGameStats ? eff : purchased;
+    const purchasedCategoryOveralls = categoryOverallMap(purchased);
+    const inGameCategoryOveralls = categoryOverallMap(eff);
+    const categoryOveralls = inGameStats ? inGameCategoryOveralls : purchasedCategoryOveralls;
 
     // AP spent
     let spent = 0;
@@ -1191,6 +1227,10 @@ window.Calc = (function () {
       facAdj,
       purchased,
       effective: eff,
+      displayValues,
+      inGameStats,
+      purchasedCategoryOveralls,
+      inGameCategoryOveralls,
       categoryOveralls,
       ap: { total, spent, available: total - spent },
       accel,

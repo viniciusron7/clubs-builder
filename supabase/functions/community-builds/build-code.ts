@@ -281,6 +281,7 @@ function normalizeSemantically(source: GameBuild): GameBuild {
     source.clubLevel === normalized.clubLevel &&
     source.height === normalized.height &&
     source.weight === normalized.weight &&
+    source.inGameStats === normalized.inGameStats &&
     Object.keys(source.attributes).every((id) => activeAttributes.has(id)) &&
     sameValue(sourceValues, normalizedValues) &&
     sameValue(source.facilities, normalized.facilities) &&
@@ -327,6 +328,7 @@ function compactBuild(build: GameBuild): PlainObject {
     ]),
   );
   if (Object.keys(attributes).length) canonical.t = attributes;
+  if (build.inGameStats) canonical.ig = 1;
   if (Object.keys(facilities).length) canonical.f = facilities;
   if (Object.keys(aiFacilities).length) canonical.af = aiFacilities;
   if (build.playstyles.length) canonical.p = build.playstyles;
@@ -382,6 +384,10 @@ export function sanitizeBuildCode(value: unknown): SanitizedBuild {
   }
   const height = integer(raw.h, "height", rule.height[0], rule.height[1]);
   const weight = integer(raw.w, "weight", rule.weight[0], rule.weight[1]);
+  if (raw.ig !== undefined && raw.ig !== 1) {
+    throw new BuildCodeError("in-game stats is invalid");
+  }
+  const inGameStats = raw.ig === 1;
   const attributes = sanitizeAttributeMap(raw.t, "t");
   const facilities = sanitizeFacilities(raw.f, PLAYER_FACILITIES, "f");
   const aiFacilities = sanitizeFacilities(raw.af, AI_FACILITIES, "af");
@@ -432,6 +438,7 @@ export function sanitizeBuildCode(value: unknown): SanitizedBuild {
     clubLevel,
     height,
     weight,
+    inGameStats,
     attributes,
     facilities,
     aiFacilities,

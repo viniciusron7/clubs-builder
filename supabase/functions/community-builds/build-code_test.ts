@@ -45,6 +45,7 @@ Deno.test("canonicalizes a valid v2 build and removes unknown top-level fields",
     l: 100,
     h: 180,
     w: 75,
+    ig: 1,
     t: { vision: 99, agility: 80 },
     po: ["CAM", "CM"],
     ignored: "<script>",
@@ -52,6 +53,7 @@ Deno.test("canonicalizes a valid v2 build and removes unknown top-level fields",
   assert(result.archetypeId === "mid_creator");
   assert(result.level === 100);
   assert(result.positions.join(",") === "CAM,CM");
+  assert(decode(result.code).ig === 1);
 
   const second = sanitizeBuildCode(result.code);
   assert(second.code === result.code, "canonical code must be stable");
@@ -71,6 +73,7 @@ Deno.test("preserves valid player and AI Facilities with their shared club budge
   }));
   const canonical = decode(result.code);
   assert(canonical.c === 10);
+  assert(!("ig" in canonical));
   assert(
     JSON.stringify(canonical.f) === JSON.stringify({ equipment_manager: 1 }),
   );
@@ -140,6 +143,10 @@ Deno.test("rejects invalid versions, archetypes, ranges and nested keys", () => 
     { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, t: { hacked: 99 } },
     { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, t: { skill_moves: 1 } },
     { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, p: ["hacked"] },
+    { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, ig: 0 },
+    { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, ig: true },
+    { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, ig: "1" },
+    { v: 2, a: "mid_creator", l: 1, h: 180, w: 75, ig: 2 },
   ];
   for (const value of invalid) {
     let rejected = false;

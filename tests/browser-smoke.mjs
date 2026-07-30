@@ -111,6 +111,41 @@ assert.deepEqual(await evaluate(`[...document.querySelectorAll('.builder-tab-lis
 
 await click('[data-arch="fwd_finisher"]');
 assert.equal(await evaluate(`document.querySelector('#btn-publish-build').disabled`), false);
+assert.equal(await evaluate(`document.querySelector('#btn-in-game-stats').getAttribute('aria-checked')`), 'false');
+await click('#btn-in-game-stats');
+assert.equal(await evaluate(`Share.fromUrl().inGameStats`), true);
+assert.equal(await evaluate(`document.querySelector('#btn-in-game-stats').getAttribute('aria-checked')`), 'true');
+const inGameStatStyle = await evaluate(`(() => {
+  const value = document.querySelector('[data-attr="acceleration"] .attribute-value');
+  const row = value.closest('.attribute-row');
+  const style = getComputedStyle(value);
+  return {
+    isChip: value.classList.contains('is-in-game'),
+    rowMode: row.classList.contains('is-in-game'),
+    color: style.color,
+    width: value.getBoundingClientRect().width,
+    height: value.getBoundingClientRect().height,
+    background: style.backgroundColor,
+  };
+})()`);
+assert.equal(inGameStatStyle.isChip, true);
+assert.equal(inGameStatStyle.rowMode, true);
+assert.equal(inGameStatStyle.color, 'rgb(255, 255, 255)');
+assert.equal(inGameStatStyle.width >= 48, true);
+assert.equal(inGameStatStyle.height >= 38, true);
+assert.notEqual(inGameStatStyle.background, 'rgba(0, 0, 0, 0)');
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl();
+  const d = Calc.derive(b);
+  return [...document.querySelectorAll('#attributes [data-category]')].every((card) => {
+    const expected = d.inGameCategoryOveralls[card.dataset.category];
+    const badge = card.querySelector('.category-overall strong');
+    return expected == null ? !badge : Number(badge.textContent) === expected;
+  });
+})()`), true);
+await screenshot('/tmp/clubs-builder-in-game-stats.png');
+await click('#btn-in-game-stats');
+assert.equal(await evaluate(`Share.fromUrl().inGameStats`), false);
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot').length`), 4);
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot.is-locked').length`), 4);
 assert.equal(await evaluate(`[...document.querySelectorAll('.summary-signature-slot img')].every((image) => !image.src.includes('/plus/'))`), true);
@@ -632,6 +667,7 @@ const communityPublisherCode = Buffer.from(JSON.stringify({
   l: 100,
   h: 180,
   w: 75,
+  ig: 1,
   t: { vision: 99, short_passing: 96, long_passing: 96 },
   po: [],
 })).toString('base64url');
@@ -679,6 +715,15 @@ await waitFor(`[...document.querySelectorAll('.community-publish-preview :is(.fc
   .length >= 5
   && [...document.querySelectorAll('.community-publish-preview :is(.fc-card-frame, .fc-card-art img, .fc-card-identity img)')]
     .every((image) => image.complete && image.naturalWidth > 0)`, 20000);
+assert.equal(await evaluate(`Share.fromUrl().inGameStats`), true);
+assert.equal(await evaluate(`(() => {
+  const derived = Calc.derive(Share.fromUrl());
+  const expected = ['pace', 'scoring', 'passing', 'ball_control', 'defending', 'physical']
+    .map((id) => derived.inGameCategoryOveralls[id]);
+  const shown = [...document.querySelectorAll('.community-publish-preview .fc-card-stats b')]
+    .map((value) => Number(value.textContent));
+  return JSON.stringify(shown) === JSON.stringify(expected);
+})()`), true);
 const automaticPublisherPosition = await evaluate(`(() => {
   const build = Share.fromUrl();
   const derived = Calc.derive(build);
@@ -735,6 +780,7 @@ await waitFor(`[...document.querySelectorAll('.community-card :is(.fc-card-frame
 assert.equal(await evaluate(`Community.getSavedAuthor()`), 'Vinicius');
 assert.equal(await evaluate(`document.querySelectorAll('[data-community-delete]').length`), 1);
 assert.equal(await evaluate(`window.__communityMock.items[0].card.athleteName`), 'Vinicius');
+assert.equal(await evaluate(`Share.decode(window.__communityMock.items[0].buildCode).inGameStats`), true);
 assert.equal(await evaluate(`document.querySelectorAll('.community-card .fc-card').length`), 2);
 assert.equal(await evaluate(`document.querySelector('#modal-root').classList.contains('hidden')`), true);
 await click('#btn-create-build');
