@@ -48,6 +48,13 @@ python3 -m http.server 4173 --bind 0.0.0.0
   values and effective values after body and player-Facility adjustments.
   Optimization still spends AP on purchased levels and stops before a positive
   adjustment would push an effective attribute past 99.
+- **Screenshot import** — reads the full 16:9 outfield Attributes screen
+  directly in the browser, including all 29 numeric attributes, Skill Moves,
+  Weak Foot, and the green Key Attributes used to suggest an archetype. Every
+  result is editable before it is applied. The importer reconstructs purchased
+  levels from the current Body and Club Facilities adjustments, suggests the
+  minimum feasible player level, and applies the import as one undoable change.
+  JPEG, PNG, and WebP files are processed locally and are never uploaded.
 - The v2 model was validated against Common/Rare base cards: 93.43% exact and
   99.995% within ±1 across 19,363 outfield players; 88.05% exact and 100% within
   ±1 across 2,528 players rated 75+; and 98.05% exact and 100% within ±1 across
@@ -124,6 +131,7 @@ clubs-builder/
     community-config.js # public gallery URL and site key
     community.js      # API client, local cache, and Turnstile
     build-card.js     # reusable FC-style Community card renderer
+    screenshot-import.js # local fixed-layout FC screenshot recognition
     app.js            # state, rendering, and events
   data/               # enriched UT dataset and card metadata catalog
   scripts/            # reproducible UT catalog enrichment
@@ -150,6 +158,10 @@ only the function URL and public Turnstile site key belong in
   clubsbuilder.com.
 - Run `node --test tests/*.test.js` to validate calculations, the model, solver,
   sharing, and history.
+- `SCREENSHOT_FIXTURES=/absolute/first.jpg,/absolute/second.jpg
+  tests/run-browser-smoke.sh` additionally runs the real-image screenshot
+  recognition regression; without that variable, the smoke test uses a
+  deterministic mocked recognition result for the import workflow.
 - Full statistical model validation uses the optional original CSV:
   `EAFC26_VALIDATION_CSV=/path/to/eafc26_ut_players.csv node --test tests/model-validation.test.js`.
   Without it, only that heavyweight test is skipped; the functional suite

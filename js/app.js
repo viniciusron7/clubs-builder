@@ -2,7 +2,7 @@
  * app.js — FC 26 Pro Clubs Builder controller (state + UI + events).
  * Faithful to the original layout: attributes are always visible with the detail
  * panel on the right; Community Builds is the home view and configuration actions open modals.
- * Depends on window.DATA, window.Calc, and window.Share.
+ * Depends on window.DATA, window.Calc, window.Share, and window.ScreenshotImport.
  * ========================================================================== */
 (function () {
   const D = window.DATA, C = window.Calc, S = window.Share, BC = window.BuildCard, L = window.DATA.labels;
@@ -36,6 +36,9 @@
     communityAutoMatchKey: '', communityTurnstileToken: '', communityTurnstileError: null,
     communityRemovingId: null, communityRequestId: 0, communityController: null, communityPublishController: null,
     communityFavoritePending: new Set(),
+    screenshotStatus: 'upload', screenshotFileName: '', screenshotPreviewUrl: '',
+    screenshotResult: null, screenshotValues: {}, screenshotArchetypeId: '', screenshotLevel: 1,
+    screenshotError: '', screenshotRequestId: 0, screenshotDragging: false,
   };
   const OUTFIELD_POSITIONS = ['ST', 'RW', 'LW', 'CAM', 'RM', 'LM', 'CM', 'CDM', 'RB', 'LB', 'CB'];
   // ponytail: maximum rows drawn per render; increase if the list becomes virtualized.
@@ -300,11 +303,17 @@
     const publishDisabled = !build.archetypeId;
     $('#tabs').innerHTML = `
       <div class="builder-tab-list">${tabButtons}</div>
-      <button id="btn-publish-build" type="button" aria-haspopup="dialog" ${publishDisabled ? 'disabled' : ''}
-        class="publish-build-action">
-        <span aria-hidden="true">＋</span>
-        <span>Publish build</span>
-      </button>`;
+      <div class="builder-tool-actions">
+        <button id="btn-import-screenshot" type="button" aria-haspopup="dialog" class="screenshot-import-trigger">
+          <span aria-hidden="true">▣</span>
+          <span>Import screenshot</span>
+        </button>
+        <button id="btn-publish-build" type="button" aria-haspopup="dialog" ${publishDisabled ? 'disabled' : ''}
+          class="publish-build-action">
+          <span aria-hidden="true">＋</span>
+          <span>Publish build</span>
+        </button>
+      </div>`;
   }
 
   // -------------------- attributes grid --------------------
@@ -541,7 +550,7 @@
   }
   function renderModal(d) {
     const root = $('#modal-root'), box = $('#modal-box');
-    const canOpenWithoutBuild = ui.modal === 'community';
+    const canOpenWithoutBuild = ui.modal === 'community' || ui.modal === 'screenshot-import';
     if (!ui.modal || (!d.arch && !canOpenWithoutBuild)) {
       root.classList.add('hidden');
       root.classList.remove('flex');
@@ -559,12 +568,354 @@
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
     else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
     else if (ui.modal === 'community') { title = 'Publish Build'; body = communityModal(); }
+    else if (ui.modal === 'screenshot-import') { title = 'Import game screenshot'; body = screenshotImportModal(d); }
     box.dataset.modalKind = ui.modal;
     box.innerHTML = modalShell(title, body);
     root.classList.remove('hidden'); root.classList.add('flex');
     setModalBackgroundInert(true);
     if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus restores the field afterward when needed
     if (ui.modal === 'community') queueMicrotask(mountCommunityTurnstile);
+  }
+
+  // ---- Game screenshot import ----
+  const screenshotImportCategories = Object.freeze([
+    ['ball_control', ['agility', 'balance', 'reactions', 'ball_control', 'dribbling', 'composure']],
+    ['scoring', ['att_position', 'finishing', 'shot_power', 'long_shots', 'volleys', 'penalties']],
+    ['passing', ['vision', 'crossing', 'fk_accuracy', 'short_passing', 'long_passing', 'curve']],
+    ['defending', ['interceptions', 'heading_accuracy', 'def_aware', 'standing_tackle', 'sliding_tackle']],
+    ['pace', ['acceleration', 'sprint_speed']],
+    ['physical', ['jumping', 'stamina', 'strength', 'aggression']],
+    ['other', ['skill_moves', 'weak_foot']],
+  ]);
+
+  function releaseScreenshotPreview() {
+    if (!ui.screenshotPreviewUrl) return;
+    URL.revokeObjectURL(ui.screenshotPreviewUrl);
+    ui.screenshotPreviewUrl = '';
+  }
+
+  function resetScreenshotImporter() {
+    ui.screenshotRequestId++;
+    releaseScreenshotPreview();
+    ui.screenshotStatus = 'upload';
+    ui.screenshotFileName = '';
+    ui.screenshotResult = null;
+    ui.screenshotValues = {};
+    ui.screenshotArchetypeId = build.archetypeId || '';
+    ui.screenshotLevel = build.level || 1;
+    ui.screenshotError = '';
+    ui.screenshotDragging = false;
+  }
+
+  function importSourceBuild(arch) {
+    const sameArchetype = !!arch && build.archetypeId === arch.id;
+    const source = sameArchetype
+      ? cloneBuild()
+      : Object.assign(defaultBuild(), {
+        archetypeId: arch ? arch.id : null,
+        level: build.level,
+        clubLevel: build.clubLevel,
+        height: build.height,
+        weight: build.weight,
+        facilities: cloneBuild(build.facilities || {}),
+        aiFacilities: cloneBuild(build.aiFacilities || {}),
+      });
+    if (!arch) return source;
+    source.archetypeId = arch.id;
+    source.height = C.clamp(source.height, Math.ceil(arch.minHeight), Math.floor(arch.maxHeight));
+    source.weight = C.clamp(source.weight, Math.ceil(arch.minWeight), Math.floor(arch.maxWeight));
+    source.attributes = {};
+    source.playstylePurchases = {};
+    source.inGameStats = true;
+    if (!sameArchetype) {
+      source.playstyles = [];
+      source.signatures = {};
+      source.positions = [];
+    }
+    return source;
+  }
+
+  function screenshotImportPlan() {
+    const errors = [], warnings = [];
+    const arch = C.archetype(ui.screenshotArchetypeId);
+    if (!arch) {
+      return { valid: false, errors: ['Choose the archetype used in the screenshot.'], warnings, arch: null, purchased: {}, cost: 0, minimumLevel: null };
+    }
+    if (arch.position === 'GK') {
+      return { valid: false, errors: ['This importer currently supports the outfield Attributes screen.'], warnings, arch, purchased: {}, cost: 0, minimumLevel: null };
+    }
+
+    const candidate = importSourceBuild(arch);
+    const baseline = C.derive(candidate);
+    const attrs = baseline.categories
+      .filter((category) => category.id !== 'goalkeeping')
+      .flatMap((category) => category.attributes);
+    const attrById = Object.fromEntries(attrs.map((attr) => [attr.id, attr]));
+    const purchased = {};
+    let cost = 0;
+
+    screenshotImportCategories.flatMap((entry) => entry[1]).forEach((id) => {
+      const attr = attrById[id];
+      if (!attr) return;
+      const observed = Number(ui.screenshotValues[id]);
+      if (!Number.isFinite(observed)) {
+        errors.push(`${attrName(id)} is missing.`);
+        return;
+      }
+      const rounded = Math.round(observed);
+      const minObserved = attr.displayType === 'stars' ? 2 : 1;
+      const maxObserved = attr.displayType === 'stars' ? 5 : 99;
+      if (rounded < minObserved || rounded > maxObserved) {
+        errors.push(`${attrName(id)} must be between ${minObserved} and ${maxObserved}.`);
+        return;
+      }
+      const adjustment = attr.displayType === 'stars'
+        ? 0
+        : (baseline.bodyAdj[id] || 0) + (baseline.facAdj[id] || 0);
+      const value = rounded - adjustment;
+      purchased[id] = value;
+      if (value < attr.baseValue || value > attr.maxValue) {
+        errors.push(`${attrName(id)} cannot reproduce ${rounded} with the current Body and Facilities setup.`);
+        return;
+      }
+      cost += C.apCost(attr.tier, attr.baseValue, value);
+      if (value > attr.baseValue) candidate.attributes[id] = value;
+    });
+
+    let minimumLevel = null;
+    for (let level = 1; level <= D.maxLevel; level++) {
+      if (C.totalAP(level) >= cost) { minimumLevel = level; break; }
+    }
+    if (minimumLevel == null) errors.push(`The detected attributes need ${cost} AP, above the level ${D.maxLevel} limit.`);
+
+    const requestedLevel = C.clamp(Math.round(+ui.screenshotLevel || 1), 1, D.maxLevel);
+    candidate.level = requestedLevel;
+    if (minimumLevel != null && requestedLevel < minimumLevel) {
+      errors.push(`Level ${requestedLevel} does not provide enough AP. Use at least level ${minimumLevel}.`);
+    }
+
+    const lowConfidence = Object.values((ui.screenshotResult && ui.screenshotResult.fields) || {})
+      .filter((field) => field && field.status !== 'detected' && !field.edited).length;
+    if (lowConfidence) warnings.push(`${lowConfidence} value${lowConfidence === 1 ? '' : 's'} should be checked before applying.`);
+    if (build.archetypeId && build.archetypeId !== arch.id) {
+      warnings.push(`Applying this screenshot will replace the current ${archName(build.archetypeId)} build with ${archName(arch.id)}.`);
+    }
+    const adjustmentCount = attrs.filter((attr) => attr.displayType !== 'stars'
+      && ((baseline.bodyAdj[attr.id] || 0) + (baseline.facAdj[attr.id] || 0)) !== 0).length;
+    if (adjustmentCount) {
+      warnings.push(`Purchased values are reconstructed with the current Body and Club Facilities adjustments for ${adjustmentCount} attributes.`);
+    }
+
+    let normalized = null, derived = null;
+    if (!errors.length) {
+      normalized = C.normalizeBuild(candidate);
+      Object.assign(candidate, normalized.build, { inGameStats: true });
+      derived = C.derive(candidate);
+      for (const [id, value] of Object.entries(ui.screenshotValues)) {
+        if (!Number.isFinite(+value) || derived.displayValues[id] == null) continue;
+        if (+derived.displayValues[id] !== Math.round(+value)) {
+          errors.push(`${attrName(id)} would display as ${derived.displayValues[id]}, not ${Math.round(+value)}.`);
+        }
+      }
+    }
+    const total = C.totalAP(requestedLevel);
+    return {
+      valid: !errors.length,
+      errors,
+      warnings,
+      arch,
+      purchased,
+      candidate,
+      derived,
+      cost,
+      total,
+      remaining: total - cost,
+      minimumLevel,
+      adjustmentCount,
+    };
+  }
+
+  function screenshotUploadState() {
+    const error = ui.screenshotStatus === 'error';
+    return `
+      <div class="screenshot-import-shell">
+        <div class="screenshot-import-intro">
+          <div>
+            <h3>Use your FC Attributes screen</h3>
+            <p>Upload a full 16:9 screenshot of the outfield Attributes tab. You can review every detected value before changing the build.</p>
+          </div>
+          <span class="screenshot-import-privacy"><span aria-hidden="true">●</span> Processed locally — never uploaded</span>
+        </div>
+        ${error ? `
+          <div class="screenshot-import-status is-error" role="alert">
+            <span class="screenshot-import-status-icon" aria-hidden="true">!</span>
+            <div class="screenshot-import-status-copy"><strong>Screenshot could not be read</strong><p>${esc(ui.screenshotError)}</p></div>
+          </div>` : ''}
+        <div class="screenshot-import-upload">
+          <label class="screenshot-import-dropzone ${ui.screenshotDragging ? 'is-dragging' : ''}" for="screenshot-import-file">
+            <input id="screenshot-import-file" type="file" accept="image/jpeg,image/png,image/webp" />
+            <span class="screenshot-import-dropzone-content">
+              <span class="screenshot-import-dropzone-icon" aria-hidden="true">▣</span>
+              <strong>${error ? 'Choose another screenshot' : 'Drop your screenshot here'}</strong>
+              <p>Use the complete Attributes screen, without cropping. JPEG, PNG or WebP · up to 10 MB.</p>
+              <span class="screenshot-import-choose">Choose screenshot</span>
+            </span>
+          </label>
+        </div>
+      </div>`;
+  }
+
+  function screenshotReadingState() {
+    return `
+      <div class="screenshot-import-shell" aria-live="polite">
+        <div class="screenshot-import-intro">
+          <div><h3>Reading attribute levels</h3><p>Matching the screenshot layout, values, stars and Key Attributes.</p></div>
+          <span class="screenshot-import-privacy"><span aria-hidden="true">●</span> Processed locally — never uploaded</span>
+        </div>
+        ${ui.screenshotPreviewUrl ? `<div class="screenshot-import-preview-frame"><img src="${esc(ui.screenshotPreviewUrl)}" alt="Screenshot being analyzed" /></div>` : ''}
+        <div class="screenshot-import-status is-loading">
+          <span class="screenshot-import-status-icon" aria-hidden="true"></span>
+          <div class="screenshot-import-status-copy"><strong>Detecting values…</strong><p>This normally takes less than a second on a desktop browser.</p></div>
+          <div class="screenshot-import-progress" aria-hidden="true"><span style="--screenshot-import-progress:68%"></span></div>
+        </div>
+      </div>`;
+  }
+
+  function screenshotReviewState() {
+    const result = ui.screenshotResult || { fields: {}, values: {} };
+    const plan = screenshotImportPlan();
+    const allIds = screenshotImportCategories.flatMap((entry) => entry[1]);
+    const detected = allIds.filter((id) => Number.isFinite(+ui.screenshotValues[id])).length;
+    const options = `<option value="" ${ui.screenshotArchetypeId ? '' : 'selected'}>Choose archetype</option>`
+      + D.archetypes.filter((arch) => arch.position !== 'GK').map((arch) =>
+        `<option value="${arch.id}" ${arch.id === ui.screenshotArchetypeId ? 'selected' : ''}>${esc(archName(arch.id))} · ${esc(arch.position)}</option>`).join('');
+    const categories = screenshotImportCategories.map(([categoryId, ids]) => {
+      const rows = ids.map((id) => {
+        const field = result.fields[id] || {};
+        const value = ui.screenshotValues[id];
+        const status = field.edited ? 'detected' : (field.status || (Number.isFinite(+value) ? 'review' : 'missing'));
+        const statusLabel = field.edited ? 'Edited' : status === 'detected' ? 'Detected' : status === 'missing' ? 'Missing' : 'Review';
+        const purchased = Number.isFinite(plan.purchased[id]) ? plan.purchased[id] : '—';
+        const stars = id === 'skill_moves' || id === 'weak_foot';
+        return `
+          <div class="screenshot-import-attribute is-${status}" data-screenshot-row="${id}">
+            <div class="screenshot-import-attribute-name">
+              <strong>${esc(attrName(id))}</strong>
+              <span class="screenshot-import-confidence is-${status}" data-confidence="${status}">${statusLabel}</span>
+            </div>
+            <div class="screenshot-import-attribute-values">
+              <label class="screenshot-import-value"><small>In game</small>
+                <input data-screenshot-attr="${id}" type="number" inputmode="numeric" min="${stars ? 2 : 1}" max="${stars ? 5 : 99}"
+                  value="${Number.isFinite(+value) ? Math.round(+value) : ''}" aria-label="${esc(attrName(id))} detected value" />
+              </label>
+              <span class="screenshot-import-value"><small>Build</small><output data-screenshot-purchased="${id}">${purchased}</output></span>
+            </div>
+          </div>`;
+      }).join('');
+      return `
+        <section class="screenshot-import-category">
+          <header><h4>${esc(catName(categoryId))}</h4><small>${ids.length}</small></header>
+          <div class="screenshot-import-category-body">${rows}</div>
+        </section>`;
+    }).join('');
+    const warningHtml = plan.errors.length
+      ? `<div class="screenshot-import-warning is-error" role="alert">${plan.errors.map(esc).join('<br />')}</div>`
+      : plan.warnings.length
+        ? `<div class="screenshot-import-warning">${plan.warnings.map(esc).join('<br />')}</div>`
+        : '<div class="screenshot-import-warning is-success">All values are ready to apply.</div>';
+    const layoutPercent = Math.round((result.layoutConfidence || 0) * 100);
+    return `
+      <div class="screenshot-import-shell">
+        <div class="screenshot-import-review">
+          <aside class="screenshot-import-preview">
+            <div class="screenshot-import-preview-frame"><img src="${esc(ui.screenshotPreviewUrl)}" alt="Imported game screenshot" /></div>
+            <div class="screenshot-import-preview-caption"><span>${esc(ui.screenshotFileName)}</span><span>${result.width || '—'} × ${result.height || '—'}</span></div>
+            <div class="screenshot-import-preview-meta">
+              <div><small>Matched archetype</small><strong>${result.archetypeId ? esc(archName(result.archetypeId)) : 'Review'}</strong></div>
+              <div><small>Values found</small><strong>${detected} / ${allIds.length}</strong></div>
+              <div><small>Layout match</small><strong>${layoutPercent}%</strong></div>
+            </div>
+            <div class="screenshot-import-level-control">
+              <label for="screenshot-import-archetype">Archetype</label>
+              <select id="screenshot-import-archetype">${options}</select>
+            </div>
+            <div class="screenshot-import-level-control">
+              <label for="screenshot-import-level">Player level</label>
+              <input id="screenshot-import-level" type="number" inputmode="numeric" min="1" max="${D.maxLevel}" value="${ui.screenshotLevel}" />
+            </div>
+            <div class="screenshot-import-summary">
+              <div><span>AP needed</span><strong>${plan.cost}</strong></div>
+              <div><span>AP remaining</span><strong>${Number.isFinite(plan.remaining) ? plan.remaining : '—'}</strong></div>
+              <div><span>Minimum level</span><strong>${plan.minimumLevel || '—'}</strong></div>
+            </div>
+            ${warningHtml}
+          </aside>
+          <div class="screenshot-import-results">
+            <div class="screenshot-import-review-head">
+              <div><h3>Review detected values</h3><p>The Build column removes the current Body and Facilities adjustments so in-game values stay identical.</p></div>
+              <span class="screenshot-import-count">${detected} of ${allIds.length}</span>
+            </div>
+            <div class="screenshot-import-category-grid">${categories}</div>
+            <div class="screenshot-import-actions">
+              <button type="button" class="screenshot-import-button" data-screenshot-restart>Choose another</button>
+              <button type="button" class="screenshot-import-button is-primary" data-screenshot-apply ${plan.valid ? '' : 'disabled'}>Apply attributes</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function screenshotImportModal() {
+    if (ui.screenshotStatus === 'reading') return screenshotReadingState();
+    if (ui.screenshotStatus === 'review') return screenshotReviewState();
+    return screenshotUploadState();
+  }
+
+  function openScreenshotImporter(opener) {
+    resetScreenshotImporter();
+    openModal('screenshot-import', opener);
+  }
+
+  async function analyzeScreenshotFile(file) {
+    const requestId = ++ui.screenshotRequestId;
+    releaseScreenshotPreview();
+    ui.screenshotFileName = file && file.name || 'FC Attributes screenshot';
+    ui.screenshotStatus = 'reading';
+    ui.screenshotError = '';
+    render();
+    try {
+      const screenshotApi = window.ScreenshotImport;
+      if (!screenshotApi || typeof screenshotApi.analyze !== 'function') throw new Error('Screenshot recognition is unavailable in this browser.');
+      if (typeof screenshotApi.inspect === 'function') await screenshotApi.inspect(file);
+      if (requestId !== ui.screenshotRequestId || ui.modal !== 'screenshot-import') return;
+      ui.screenshotPreviewUrl = URL.createObjectURL(file);
+      render();
+      const result = await screenshotApi.analyze(file);
+      if (requestId !== ui.screenshotRequestId || ui.modal !== 'screenshot-import') return;
+      ui.screenshotResult = result;
+      ui.screenshotValues = { ...result.values };
+      ui.screenshotArchetypeId = result.archetypeId || build.archetypeId || '';
+      ui.screenshotLevel = build.archetypeId ? build.level : 1;
+      const initialPlan = screenshotImportPlan();
+      if (initialPlan.minimumLevel != null) ui.screenshotLevel = Math.max(ui.screenshotLevel, initialPlan.minimumLevel);
+      ui.screenshotStatus = 'review';
+      render();
+    } catch (error) {
+      if (requestId !== ui.screenshotRequestId || ui.modal !== 'screenshot-import') return;
+      ui.screenshotStatus = 'error';
+      ui.screenshotError = error && error.message ? error.message : 'Use a clear, uncropped 16:9 image of the Attributes tab.';
+      render();
+    }
+  }
+
+  function applyScreenshotImport() {
+    const plan = screenshotImportPlan();
+    if (!plan.valid) return toast('Review the highlighted import issues first.');
+    const outcome = commitBuildChange(() => { build = cloneBuild(plan.candidate); }, { notice: false, render: false });
+    if (!outcome.changed) return closeModal();
+    ui.selectedAttr = null;
+    closeModal();
+    toast(`Screenshot imported · ${Object.keys(plan.purchased).length} values · Ctrl+Z to undo`);
   }
 
   // ---- Community Builds modal ----
@@ -2299,6 +2650,15 @@
       ui.communityTurnstileError = null;
       ui.communityAthletePickerOpen = false;
     }
+    if (ui.modal === 'screenshot-import') {
+      ui.screenshotRequestId++;
+      releaseScreenshotPreview();
+      ui.screenshotStatus = 'upload';
+      ui.screenshotResult = null;
+      ui.screenshotValues = {};
+      ui.screenshotError = '';
+      ui.screenshotDragging = false;
+    }
     ui.modal = null;
     ui.psPicker = false;
     render();
@@ -2324,7 +2684,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-in-game-stats,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],[data-screenshot-restart],[data-screenshot-apply],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-in-game-stats,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-import-screenshot,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -2348,7 +2708,13 @@
       }
       if (t.id === 'btn-maxsum') return openModal('maxsum', t);
       if (t.id === 'btn-utplayers') return openModal('utplayers', t);
+      if (t.id === 'btn-import-screenshot') return openScreenshotImporter(t);
       if (t.id === 'btn-publish-build') return openCommunityPublisher(t);
+      if (t.hasAttribute('data-screenshot-restart')) {
+        resetScreenshotImporter();
+        return render();
+      }
+      if (t.hasAttribute('data-screenshot-apply')) return applyScreenshotImport();
       if (t.id === 'btn-create-build') return showBuilder();
       if (t.dataset.view === 'community') return showCommunityHome();
       if (t.hasAttribute('data-community-publish-cancel')) {
@@ -2504,6 +2870,23 @@
         ui.communityPublishError = null;
         return refreshModal();
       }
+      if (t.hasAttribute('data-screenshot-attr')) {
+        const id = t.dataset.screenshotAttr;
+        const raw = t.value.replace(/\D/g, '');
+        if (raw !== t.value) t.value = raw;
+        ui.screenshotValues[id] = raw === '' ? '' : C.clamp(parseInt(raw, 10), +t.min, +t.max);
+        if (ui.screenshotResult && ui.screenshotResult.fields && ui.screenshotResult.fields[id]) {
+          ui.screenshotResult.fields[id].edited = true;
+        }
+        return refreshModal();
+      }
+      if (t.id === 'screenshot-import-level') {
+        const raw = t.value.replace(/\D/g, '');
+        if (raw !== t.value) t.value = raw;
+        if (!raw) { ui.screenshotLevel = ''; return; }
+        ui.screenshotLevel = C.clamp(parseInt(raw, 10), 1, D.maxLevel);
+        return refreshModal();
+      }
       if (t.dataset.body) return liveBody(t.dataset.body, parseInt(t.value, 10));
       if (t.hasAttribute('data-attr-range')) return liveAttrRange(t);
     });
@@ -2531,6 +2914,17 @@
       }
       if (e.target.id === 'community-nation') {
         ui.communityNationId = e.target.value;
+        return refreshModal();
+      }
+      if (e.target.id === 'screenshot-import-file') {
+        const file = e.target.files && e.target.files[0];
+        if (file) void analyzeScreenshotFile(file);
+        return;
+      }
+      if (e.target.id === 'screenshot-import-archetype') {
+        ui.screenshotArchetypeId = e.target.value;
+        const plan = screenshotImportPlan();
+        if (plan.minimumLevel != null && (+ui.screenshotLevel || 1) < plan.minimumLevel) ui.screenshotLevel = plan.minimumLevel;
         return refreshModal();
       }
       if (e.target.dataset.body) return commitBodyDrag();
@@ -2575,6 +2969,26 @@
       if (mod && (key === 'y' || (key === 'z' && e.shiftKey)) && !typing) { e.preventDefault(); return redoBuild(); }
       if (e.key === 'Enter' && e.target.id === 'level-input') return e.target.blur();
       if (e.key === 'Escape' && ui.modal) closeModal();
+    });
+    document.body.addEventListener('dragover', (e) => {
+      if (ui.modal !== 'screenshot-import' || !e.target.closest('.screenshot-import-dropzone')) return;
+      e.preventDefault();
+      if (!ui.screenshotDragging) {
+        ui.screenshotDragging = true;
+        e.target.closest('.screenshot-import-dropzone').classList.add('is-dragging');
+      }
+    });
+    document.body.addEventListener('dragleave', (e) => {
+      if (!e.target.closest('.screenshot-import-dropzone')) return;
+      ui.screenshotDragging = false;
+      e.target.closest('.screenshot-import-dropzone').classList.remove('is-dragging');
+    });
+    document.body.addEventListener('drop', (e) => {
+      if (ui.modal !== 'screenshot-import' || !e.target.closest('.screenshot-import-dropzone')) return;
+      e.preventDefault();
+      ui.screenshotDragging = false;
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) void analyzeScreenshotFile(file);
     });
 
     render();

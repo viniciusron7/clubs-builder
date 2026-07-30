@@ -3,6 +3,18 @@ import fs from 'node:fs/promises';
 
 const cdpBase = process.env.CDP_URL || 'http://127.0.0.1:9222';
 const appUrl = process.env.APP_URL || 'http://127.0.0.1:4173/';
+const screenshotFixtures = String(process.env.SCREENSHOT_FIXTURES || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const screenshotExpectedValues = {
+  agility: 89, balance: 91, reactions: 92, ball_control: 95, dribbling: 91, composure: 90,
+  att_position: 90, finishing: 97, shot_power: 97, long_shots: 96, volleys: 75, penalties: 75,
+  vision: 80, crossing: 55, fk_accuracy: 65, short_passing: 85, long_passing: 50, curve: 92,
+  interceptions: 60, heading_accuracy: 75, def_aware: 55, standing_tackle: 50, sliding_tackle: 40,
+  acceleration: 93, sprint_speed: 88, jumping: 80, stamina: 83, strength: 85, aggression: 65,
+  skill_moves: 5, weak_foot: 5,
+};
 const target = await fetch(`${cdpBase}/json/new?about:blank`, { method: 'PUT' }).then((response) => response.json());
 const socket = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
@@ -74,8 +86,17 @@ const screenshot = async (file) => {
   const result = await send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
   await fs.writeFile(file, Buffer.from(result.data, 'base64'));
 };
+const setFileInput = async (selector, file) => {
+  const documentNode = await send('DOM.getDocument', { depth: 1 });
+  const input = await send('DOM.querySelector', {
+    nodeId: documentNode.root.nodeId,
+    selector,
+  });
+  assert.ok(input.nodeId, `Missing file input: ${selector}`);
+  await send('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [file] });
+};
 
-await Promise.all([send('Page.enable'), send('Runtime.enable'), send('Log.enable'), send('Network.enable')]);
+await Promise.all([send('Page.enable'), send('Runtime.enable'), send('Log.enable'), send('Network.enable'), send('DOM.enable')]);
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
 await send('Page.addScriptToEvaluateOnNewDocument', {
   source: `window.COMMUNITY_CONFIG = { apiUrl: '', turnstileSiteKey: '' };`,
@@ -146,6 +167,131 @@ assert.equal(await evaluate(`(() => {
 await screenshot('/tmp/clubs-builder-in-game-stats.png');
 await click('#btn-in-game-stats');
 assert.equal(await evaluate(`Share.fromUrl().inGameStats`), false);
+await click('#btn-import-screenshot');
+assert.equal(await evaluate(`document.querySelector('#modal-box').dataset.modalKind`), 'screenshot-import');
+assert.match(await evaluate(`document.querySelector('.screenshot-import-privacy').innerText`), /Processed locally — never uploaded/);
+const screenshotValidation = await evaluate(`(async () => {
+  const codeOf = async (file) => {
+    try { await ScreenshotImport.inspect(file); return null; }
+    catch (error) { return error.code; }
+  };
+  const tinyBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+  const hugeHeader = new Uint8Array(24);
+  hugeHeader.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  hugeHeader.set([0x49, 0x48, 0x44, 0x52], 12);
+  const dimensions = new DataView(hugeHeader.buffer);
+  dimensions.setUint32(16, 6000);
+  dimensions.setUint32(20, 4000);
+  return {
+    type: await codeOf(new File(['x'], 'attributes.txt', { type: 'text/plain' })),
+    small: await codeOf(new File([tinyBytes], 'attributes.png', { type: 'image/png' })),
+    pixels: await codeOf(new File([hugeHeader], 'attributes.png', { type: 'image/png' })),
+    size: await codeOf({ size: ScreenshotImport.limits.maxBytes + 1, type: 'image/png' }),
+  };
+})()`);
+assert.deepEqual(screenshotValidation, {
+  type: 'invalid-type',
+  small: 'resolution-too-small',
+  pixels: 'resolution-too-large',
+  size: 'file-too-large',
+});
+await evaluate(`(() => {
+  window.__realScreenshotImport = window.ScreenshotImport;
+  const values = {
+    agility: 89, balance: 91, reactions: 92, ball_control: 95, dribbling: 91, composure: 90,
+    att_position: 90, finishing: 97, shot_power: 97, long_shots: 96, volleys: 75, penalties: 75,
+    vision: 80, crossing: 55, fk_accuracy: 65, short_passing: 85, long_passing: 50, curve: 92,
+    interceptions: 60, heading_accuracy: 75, def_aware: 55, standing_tackle: 50, sliding_tackle: 40,
+    acceleration: 93, sprint_speed: 88, jumping: 80, stamina: 83, strength: 85, aggression: 65,
+    skill_moves: 5, weak_foot: 5,
+  };
+  window.ScreenshotImport = { analyze: async () => ({
+    values,
+    fields: Object.fromEntries(Object.keys(values).map((id) => [id, { status: 'detected', confidence: 1 }])),
+    archetypeId: 'fwd_finisher',
+    keyAttributes: ['finishing', 'volleys', 'reactions', 'composure'],
+    layoutConfidence: 1,
+    width: 1920,
+    height: 1080,
+  }) };
+  const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+  const file = new File([bytes], 'attributes.png', { type: 'image/png' });
+  const input = document.querySelector('#screenshot-import-file');
+  Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+await waitFor(`document.querySelector('#modal-box').dataset.modalKind === 'screenshot-import'
+  && document.querySelectorAll('[data-screenshot-attr]').length === 31`);
+if (!await evaluate(`!!document.querySelector('[data-screenshot-apply]:not([disabled])')`)) {
+  throw new Error(await evaluate(`document.querySelector('.screenshot-import-warning').innerText`));
+}
+assert.equal(await evaluate(`document.querySelector('#screenshot-import-archetype').value`), 'fwd_finisher');
+assert.equal(await evaluate(`document.querySelector('#screenshot-import-level').value`), '96');
+assert.equal(await evaluate(`document.querySelectorAll('.screenshot-import-confidence.is-detected').length`), 31);
+await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 900, deviceScaleFactor: 1, mobile: true });
+await delay(75);
+const screenshotImportMobile = await evaluate(`(() => {
+  const modal = document.querySelector('#modal-box');
+  const review = document.querySelector('.screenshot-import-review');
+  return {
+    viewport: innerWidth,
+    modalWidth: modal.getBoundingClientRect().width,
+    modalScrollWidth: modal.scrollWidth,
+    reviewWidth: review.getBoundingClientRect().width,
+    categoryColumns: getComputedStyle(document.querySelector('.screenshot-import-category-grid')).gridTemplateColumns.split(' ').length,
+  };
+})()`);
+assert.equal(screenshotImportMobile.viewport, 390);
+assert.equal(screenshotImportMobile.modalWidth <= 366, true);
+assert.equal(screenshotImportMobile.modalScrollWidth <= Math.ceil(screenshotImportMobile.modalWidth), true);
+assert.equal(screenshotImportMobile.reviewWidth <= screenshotImportMobile.modalWidth, true);
+assert.equal(screenshotImportMobile.categoryColumns, 1);
+await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+await delay(75);
+await click('[data-screenshot-apply]');
+const importedScreenshotBuild = await evaluate(`(() => {
+  const build = Share.fromUrl();
+  const derived = Calc.derive(build);
+  return {
+    level: build.level,
+    inGameStats: build.inGameStats,
+    agility: derived.displayValues.agility,
+    balance: derived.displayValues.balance,
+    sprintSpeed: derived.displayValues.sprint_speed,
+    weakFoot: derived.displayValues.weak_foot,
+  };
+})()`);
+assert.deepEqual(importedScreenshotBuild, {
+  level: 96,
+  inGameStats: true,
+  agility: 89,
+  balance: 91,
+  sprintSpeed: 88,
+  weakFoot: 5,
+});
+await waitFor(`document.activeElement && document.activeElement.id === 'btn-import-screenshot'`);
+await click('#btn-undo');
+assert.equal(await evaluate(`Share.fromUrl().level`), 1);
+assert.equal(await evaluate(`Share.fromUrl().inGameStats`), false);
+await evaluate(`window.ScreenshotImport = window.__realScreenshotImport`);
+for (let fixtureIndex = 0; fixtureIndex < screenshotFixtures.length; fixtureIndex++) {
+  await click('#btn-import-screenshot');
+  await setFileInput('#screenshot-import-file', screenshotFixtures[fixtureIndex]);
+  await waitFor(`document.querySelectorAll('[data-screenshot-attr]').length === 31`, 10000);
+  const recognized = await evaluate(`(() => ({
+    archetype: document.querySelector('#screenshot-import-archetype').value,
+    values: Object.fromEntries([...document.querySelectorAll('[data-screenshot-attr]')].map((input) => [input.dataset.screenshotAttr, Number(input.value)])),
+    detected: document.querySelectorAll('.screenshot-import-confidence.is-detected').length,
+    review: document.querySelectorAll('.screenshot-import-confidence.is-review').length,
+    canApply: !!document.querySelector('[data-screenshot-apply]:not([disabled])'),
+  }))()`);
+  assert.equal(recognized.archetype, 'fwd_finisher');
+  assert.deepEqual(recognized.values, screenshotExpectedValues);
+  assert.equal(recognized.detected + recognized.review, 31);
+  assert.equal(recognized.canApply, true);
+  if (fixtureIndex === 0) await screenshot('/tmp/clubs-builder-screenshot-import.png');
+  await click('[data-modal-close]');
+}
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot').length`), 4);
 assert.equal(await evaluate(`document.querySelectorAll('.summary-signature-slot.is-locked').length`), 4);
 assert.equal(await evaluate(`[...document.querySelectorAll('.summary-signature-slot img')].every((image) => !image.src.includes('/plus/'))`), true);
