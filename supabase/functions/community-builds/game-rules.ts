@@ -9,9 +9,12 @@
 export type GameBuild = {
   archetypeId: string | null;
   level: number;
+  clubLevel: number;
   height: number;
   weight: number;
   attributes: Record<string, number>;
+  facilities: Record<string, number>;
+  aiFacilities: Record<string, number>;
   playstyles: string[];
   playstylePurchases: Record<
     string,
@@ -38,9 +41,17 @@ type GameAttribute = {
   maxValue: number;
 };
 
+type GameFacility = {
+  id: string;
+  levels: Array<{ cost: number }>;
+};
+
 type GameData = {
   archetypes: GameArchetype[];
   categories: Array<{ attributes: Array<{ id: string }> }>;
+  facilities: GameFacility[];
+  aiFacilities: GameFacility[];
+  clubLevelBudgets: Record<string, number>;
   playstyles: Array<{ id: string }>;
   specializations: Array<{ id: string; archetypeId: string }>;
 };

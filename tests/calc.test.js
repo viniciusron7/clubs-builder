@@ -27,10 +27,12 @@ test('displayed OVR applies the in-game minus-one calibration', () => {
   assert.equal(Calc.overallForPosition('ST', derived), expected);
 });
 
-test('level, AP and specialization tables match the level-100 ruleset', () => {
+test('level, AP, Facilities and specialization tables match the level-100 ruleset', () => {
   const { Calc, DATA } = createContext();
   assert.equal(DATA.maxLevel, 100);
   assert.equal(Calc.totalAP(100), 3167);
+  assert.equal(DATA.facilities.length, 34);
+  assert.equal(DATA.aiFacilities.length, 42);
   DATA.archetypes.forEach((arch) => assert.equal(DATA.specializations.filter((spec) => spec.archetypeId === arch.id).length, 3));
   assert.equal(DATA.specializations.some((spec) => spec.id === 'spider' && spec.archetypeId === 'gk_shot_stopper'), true);
 });
@@ -138,15 +140,22 @@ test('derived category OVRs use body-adjusted effective attribute values', () =>
   assert.notDeepEqual(changedBody.categoryOveralls, standard.categoryOveralls);
 });
 
-test('position order and body do not change estimated OVR', () => {
+test('position order, body and Facilities do not change estimated positional OVR', () => {
   const { Calc } = createContext();
   const base = defaultBuild({ positions: ['ST', 'CAM'], attributes: { finishing: 92, reactions: 90, short_passing: 88 } });
-  const changedBody = { ...base, height: 190, weight: 90 };
+  const changedBodyAndFacilities = {
+    ...base,
+    clubLevel: 10,
+    height: 190,
+    weight: 90,
+    facilities: { sports_scientist: 1 },
+  };
   const first = Calc.derive(base);
-  const second = Calc.derive(changedBody);
+  const second = Calc.derive(changedBodyAndFacilities);
   assert.deepEqual(Calc.overallMapForValues(['ST', 'CAM'], first, null), Calc.overallMapForValues(['CAM', 'ST'], first, null));
   assert.equal(Calc.overallForPosition('ST', first), Calc.overallForPosition('ST', second));
   assert.equal(Calc.overallForPosition('CAM', first), Calc.overallForPosition('CAM', second));
+  assert.equal(second.facAdj.acceleration, 2);
 });
 
 test('displayed OVR weights use the selected position or average every selected position', () => {
@@ -202,11 +211,12 @@ test('Skill Moves and Weak Foot are never treated as key attributes', () => {
   }
 });
 
-test('PlayStyle requirements use purchased values', () => {
+test('PlayStyle requirements use purchased values while Facilities grant their PlayStyle automatically', () => {
   const { Calc } = createContext();
   const ps = { id: 'test', requirements: [{ attributeId: 'acceleration', minValue: 90 }] };
   assert.equal(Calc.playstyleEligible(ps, { acceleration: 89 }), false);
   assert.equal(Calc.playstyleEligible(ps, { acceleration: 90 }), true);
+  assert.equal(Calc.playstyleEligible(ps, { acceleration: 1 }, new Set(['test'])), true);
 });
 
 test('signature PlayStyles are equipped automatically and cannot occupy regular slots', () => {
@@ -248,36 +258,66 @@ test('PlayStyle Quick Unlock uses central AP costs and rejects impossible requir
   assert.deepEqual(Object.keys(impossible.values), []);
 });
 
-test('normalization enforces AP, one specialization and GK position', () => {
+test('normalization enforces AP, shared Facility budget, one specialization and GK position', () => {
   const { Calc, DATA } = createContext();
   const normalized = Calc.normalizeBuild(defaultBuild({
     archetypeId: 'gk_shot_stopper',
     level: 1,
+    clubLevel: 1,
     attributes: Object.fromEntries(DATA.categories.flatMap((category) => category.attributes.map((attr) => [attr.id, 99]))),
+    facilities: { equipment_manager: 2, unknown_player_facility: 3 },
+    aiFacilities: { ai_gk_goalkeeping_coach: 2, unknown_ai_facility: 3 },
     playstyles: DATA.playstyles.slice(0, 9).map((ps) => ps.id),
     signatures: { 0: 'spider', 1: 'octopus' },
     positions: ['ST', 'CB'],
   })).build;
   const derived = Calc.derive(normalized);
   assert.equal(derived.ap.available >= 0, true);
+  assert.equal(derived.facilities.cost <= derived.facilities.budget, true);
+  assert.deepEqual({ ...normalized.facilities }, { equipment_manager: 2 });
+  assert.deepEqual({ ...normalized.aiFacilities }, { ai_gk_goalkeeping_coach: 1 });
   assert.equal(normalized.playstyles.length, 0);
   assert.equal(Object.keys(normalized.signatures).length <= 1, true);
   assert.deepEqual([...normalized.positions], ['GK']);
 });
 
-test('removed Facilities fields are ignored by normalization and derivation', () => {
+test('player Facilities boost effective values and category OVRs while AI Facilities only consume budget', () => {
   const { Calc } = createContext();
-  const normalized = Calc.normalizeBuild(defaultBuild({
+  const base = Calc.derive(defaultBuild({ clubLevel: 10 }));
+  const withPlayer = Calc.derive(defaultBuild({
     clubLevel: 10,
-    facilities: { legacy_player_facility: 3 },
-    aiFacilities: { legacy_ai_facility: 3 },
-  })).build;
-  assert.equal('clubLevel' in normalized, false);
-  assert.equal('facilities' in normalized, false);
-  assert.equal('aiFacilities' in normalized, false);
+    facilities: { sports_scientist: 1 },
+  }));
+  const withAi = Calc.derive(defaultBuild({
+    clubLevel: 10,
+    aiFacilities: { ai_gk_goalkeeping_coach: 1 },
+  }));
+  assert.equal(withPlayer.facAdj.acceleration, 2);
+  assert.equal(withPlayer.effective.acceleration, base.effective.acceleration + 2);
+  assert.notDeepEqual(withPlayer.categoryOveralls, base.categoryOveralls);
+  assert.deepEqual(withAi.facAdj, base.facAdj);
+  assert.deepEqual(withAi.effective, base.effective);
+  assert.deepEqual(withAi.categoryOveralls, base.categoryOveralls);
+  assert.equal(withAi.facilities.aiCost, 300);
+  assert.equal(withAi.facilities.cost, withAi.facilities.playerCost + withAi.facilities.aiCost);
+});
+
+test('Facility-granted PlayStyles are automatic, use no regular slot and preserve Quick Unlock receipts', () => {
+  const { Calc } = createContext();
+  const base = defaultBuild({
+    clubLevel: 3,
+    facilities: { equipment_manager: 3 },
+    playstyles: ['acrobatic'],
+    attributes: { stamina: 80 },
+    playstylePurchases: {
+      acrobatic: { before: { stamina: 75 }, after: { stamina: 80 } },
+    },
+  });
+  const normalized = Calc.normalizeBuild(base).build;
   const derived = Calc.derive(normalized);
-  assert.equal('facAdj' in derived, false);
-  assert.equal('facilities' in derived, false);
+  assert.equal(normalized.playstyles.includes('acrobatic'), false);
+  assert.equal(derived.facilities.unlocks.has('acrobatic'), true);
+  assert.equal(!!normalized.playstylePurchases.acrobatic, true);
 });
 
 test('UT target plans use the same tiers and cap values at archetype maximums', () => {

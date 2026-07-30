@@ -187,7 +187,8 @@ Content-Type: application/json
 ```
 
 The API accepts only the existing compact v2 build format. It validates the
-archetype, body ranges, level, known attributes, PlayStyles, specializations and
+archetype, body ranges, player and club levels, known attributes, player and AI
+Facilities against their shared budget, PlayStyles, specializations, and
 positions; requires Skill Moves and Weak Foot values present in the compact
 payload to be between 2 and 5; removes unknown top-level fields; and stores a
 canonical encoding. Author names must contain 2–32 characters. Build names are

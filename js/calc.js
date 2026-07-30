@@ -9,6 +9,7 @@ window.Calc = (function () {
   const NON_KEY_ATTRIBUTES = new Set(['skill_moves', 'weak_foot']);
 
   const archetype = (id) => byId(D.archetypes, id);
+  const facility = (id) => byId(D.facilities, id) || byId(D.aiFacilities, id);
   const playstyle = (id) => byId(D.playstyles, id);
 
   // ---- attributes: base categories with archetype modifiers + key tier discount ----
@@ -103,8 +104,46 @@ window.Calc = (function () {
     return 'CONTROLLED';
   }
 
+  // ---- facilities ----
+  function facilityLevel(fac, star) {
+    return fac && fac.levels[star] ? fac.levels[star] : null;
+  }
+  function facilityAdjustments(facilities) {
+    const adjustments = {};
+    for (const id in facilities) {
+      const level = facilityLevel(facility(id), facilities[id]);
+      if (!level) continue;
+      for (const boost of level.attributeBoosts) {
+        adjustments[boost.attributeId] = (adjustments[boost.attributeId] || 0) + boost.value;
+      }
+    }
+    return adjustments;
+  }
+  function facilityCost(facilities) {
+    let total = 0;
+    for (const id in facilities) {
+      const level = facilityLevel(facility(id), facilities[id]);
+      if (level) total += level.cost;
+    }
+    return total;
+  }
+  function facilityUnlocks(facilities) {
+    const unlocks = new Set();
+    for (const id in facilities) {
+      const definition = facility(id);
+      if (!definition) continue;
+      for (let star = 1; star <= facilities[id]; star++) {
+        const level = definition.levels[star];
+        if (level && level.playstyle) unlocks.add(level.playstyle);
+      }
+    }
+    return unlocks;
+  }
+  const budget = (clubLevel) => D.clubLevelBudgets[clubLevel] || 0;
+
   // ---- playstyles ----
-  function playstyleEligible(ps, purchased) {
+  function playstyleEligible(ps, purchased, unlocks = new Set()) {
+    if (unlocks.has(ps.id)) return true;
     if (!ps.requirements || !ps.requirements.length) return true;
     return ps.requirements.every((r) => (purchased[r.attributeId] || 0) >= r.minValue);
   }
@@ -952,13 +991,21 @@ window.Calc = (function () {
 
   function normalizeBuild(input) {
     const source = input && typeof input === 'object' ? input : {};
+    const validClubLevels = Object.keys(D.clubLevelBudgets).map(Number).sort((a, b) => a - b);
+    const requestedClubLevel = Number.isFinite(+source.clubLevel) ? Math.round(+source.clubLevel) : validClubLevels[0];
+    const clubLevel = validClubLevels.reduce((best, level) =>
+      Math.abs(level - requestedClubLevel) < Math.abs(best - requestedClubLevel) ? level : best,
+    validClubLevels[0]);
     const arch = archetype(source.archetypeId);
     const out = {
       archetypeId: arch ? arch.id : null,
       level: clamp(Number.isFinite(+source.level) ? Math.round(+source.level) : 1, 1, D.maxLevel),
+      clubLevel,
       height: D.defaultHeight,
       weight: D.defaultWeight,
       attributes: {},
+      facilities: {},
+      aiFacilities: {},
       playstyles: [],
       playstylePurchases: {},
       signatures: {},
@@ -995,13 +1042,32 @@ window.Calc = (function () {
       }
       attrs.forEach((attr) => { if (values[attr.id] > attr.baseValue) out.attributes[attr.id] = values[attr.id]; });
 
+      let remainingFacilityBudget = budget(out.clubLevel);
+      const sanitizeFacilities = (selected, definitions) => {
+        const clean = {};
+        Object.keys(selected || {}).forEach((id) => {
+          const definition = definitions.find((entry) => entry.id === id);
+          if (!definition) return;
+          let star = clamp(Math.round(+selected[id] || 0), 0, definition.levels.length - 1);
+          while (star > 0 && definition.levels[star].cost > remainingFacilityBudget) star--;
+          if (star > 0) {
+            clean[id] = star;
+            remainingFacilityBudget -= definition.levels[star].cost;
+          }
+        });
+        return clean;
+      };
+      out.facilities = sanitizeFacilities(source.facilities, D.facilities);
+      out.aiFacilities = sanitizeFacilities(source.aiFacilities, D.aiFacilities);
+
       const purchased = Object.fromEntries(attrs.map((attr) => [attr.id, values[attr.id]]));
+      const facilityGranted = facilityUnlocks(out.facilities);
       const slots = unlockedSlots(out.level);
       const seenPlaystyles = new Set();
       for (const id of Array.isArray(source.playstyles) ? source.playstyles : []) {
         const ps = playstyle(id);
-        if (!ps || seenPlaystyles.has(id) || out.playstyles.length >= slots) continue;
-        if (!playstyleEligible(ps, purchased)) continue;
+        if (!ps || seenPlaystyles.has(id) || facilityGranted.has(id) || out.playstyles.length >= slots) continue;
+        if (!playstyleEligible(ps, purchased, facilityGranted)) continue;
         seenPlaystyles.add(id);
         out.playstyles.push(id);
       }
@@ -1067,9 +1133,12 @@ window.Calc = (function () {
     const comparable = {
       archetypeId: source.archetypeId || null,
       level: source.level != null ? source.level : 1,
+      clubLevel: source.clubLevel != null ? source.clubLevel : validClubLevels[0],
       height: source.height != null ? source.height : D.defaultHeight,
       weight: source.weight != null ? source.weight : D.defaultWeight,
       attributes: source.attributes || {},
+      facilities: source.facilities || {},
+      aiFacilities: source.aiFacilities || {},
       playstyles: source.playstyles || [],
       playstylePurchases: source.playstylePurchases || {},
       signatures: source.signatures || {},
@@ -1091,12 +1160,15 @@ window.Calc = (function () {
       }),
     }));
     const bodyAdj = bodyAdjustments(arch, build.height, build.weight);
+    const facilities = build.facilities || {};
+    const aiFacilities = build.aiFacilities || {};
+    const facAdj = facilityAdjustments(facilities);
 
     const purchased = {};
     const eff = {};
     cats.forEach((c) => c.attributes.forEach((a) => {
       purchased[a.id] = a.currentValue;
-      eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0), 1, 99);
+      eff[a.id] = clamp(a.currentValue + (bodyAdj[a.id] || 0) + (facAdj[a.id] || 0), 1, 99);
     }));
     const categoryOveralls = categoryOverallMap(eff);
 
@@ -1116,19 +1188,28 @@ window.Calc = (function () {
       arch,
       categories: cats,
       bodyAdj,
+      facAdj,
       purchased,
       effective: eff,
       categoryOveralls,
       ap: { total, spent, available: total - spent },
       accel,
+      facilities: {
+        playerCost: facilityCost(facilities),
+        aiCost: facilityCost(aiFacilities),
+        cost: facilityCost(facilities) + facilityCost(aiFacilities),
+        budget: budget(build.clubLevel),
+        unlocks: facilityUnlocks(facilities),
+      },
       slots: { unlocked: unlockedSlots(build.level), signaturePlus: signaturePlusCount(build.level) },
     };
   }
 
   return {
-    archetype, playstyle,
+    archetype, facility, playstyle,
     baseCategories, apCostAt, apCost, totalAP, apCostNextPoint, affordableTarget,
     bodyAdjustments, accelType,
+    facilityAdjustments, facilityCost, facilityUnlocks, budget,
     playstyleEligible, unlockedSlots, signaturePlusCount, barColor,
     categoryOverall, categoryOverallMap,
     archetypeSpecializations, specializationUnlocked, requirementUnlockPlan, quickUnlockCost, signatureSlots, curVal, findAttr,

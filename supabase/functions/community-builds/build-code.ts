@@ -56,6 +56,23 @@ const PLAYSTYLES = new Set(
   GAME_DATA.playstyles.map((playstyle) => playstyle.id),
 );
 
+const PLAYER_FACILITIES = new Map(
+  GAME_DATA.facilities.map((facility) => [
+    facility.id,
+    facility.levels.length - 1,
+  ]),
+);
+const AI_FACILITIES = new Map(
+  GAME_DATA.aiFacilities.map((facility) => [
+    facility.id,
+    facility.levels.length - 1,
+  ]),
+);
+const CLUB_LEVELS = new Set(
+  Object.keys(GAME_DATA.clubLevelBudgets).map(Number),
+);
+const DEFAULT_CLUB_LEVEL = Math.min(...CLUB_LEVELS);
+
 const OUTFIELD_POSITIONS = new Set(
   Object.keys(GAME_OVERALL_MODEL.positions).filter((position) =>
     position !== "GK"
@@ -178,6 +195,22 @@ function sanitizePurchases(value: unknown): Purchases {
   return output;
 }
 
+function sanitizeFacilities(
+  value: unknown,
+  definitions: ReadonlyMap<string, number>,
+  label: string,
+): Record<string, number> {
+  if (value === undefined) return {};
+  if (!isObject(value)) throw new BuildCodeError(`${label} must be an object`);
+  assertKnownKeys(value, new Set(definitions.keys()), label, definitions.size);
+  return Object.fromEntries(
+    Object.keys(value).sort().map((id) => [
+      id,
+      integer(value[id], `${label}.${id}`, 1, definitions.get(id) as number),
+    ]),
+  );
+}
+
 function decodeBase64Url(value: string): string {
   if (
     !value || value.length > 16384 || !/^[A-Za-z0-9_-]+$/.test(value) ||
@@ -245,10 +278,13 @@ function normalizeSemantically(source: GameBuild): GameBuild {
 
   const unchanged = source.archetypeId === normalized.archetypeId &&
     source.level === normalized.level &&
+    source.clubLevel === normalized.clubLevel &&
     source.height === normalized.height &&
     source.weight === normalized.weight &&
     Object.keys(source.attributes).every((id) => activeAttributes.has(id)) &&
     sameValue(sourceValues, normalizedValues) &&
+    sameValue(source.facilities, normalized.facilities) &&
+    sameValue(source.aiFacilities, normalized.aiFacilities) &&
     sameValue(source.playstyles, normalized.playstyles) &&
     sameValue(source.playstylePurchases, normalized.playstylePurchases) &&
     sameValue(source.signatures, normalized.signatures) &&
@@ -268,10 +304,21 @@ function compactBuild(build: GameBuild): PlainObject {
     v: 2,
     a: build.archetypeId,
     l: build.level,
+    c: build.clubLevel,
     h: build.height,
     w: build.weight,
   };
   const attributes = sanitizeAttributeMap(build.attributes, "t");
+  const facilities = sanitizeFacilities(
+    build.facilities,
+    PLAYER_FACILITIES,
+    "f",
+  );
+  const aiFacilities = sanitizeFacilities(
+    build.aiFacilities,
+    AI_FACILITIES,
+    "af",
+  );
   const purchases = sanitizePurchases(build.playstylePurchases);
   const signatures = Object.fromEntries(
     Object.keys(build.signatures).sort().map((key) => [
@@ -280,6 +327,8 @@ function compactBuild(build: GameBuild): PlainObject {
     ]),
   );
   if (Object.keys(attributes).length) canonical.t = attributes;
+  if (Object.keys(facilities).length) canonical.f = facilities;
+  if (Object.keys(aiFacilities).length) canonical.af = aiFacilities;
   if (build.playstyles.length) canonical.p = build.playstyles;
   if (Object.keys(purchases).length) canonical.pu = purchases;
   if (Object.keys(signatures).length) canonical.s = signatures;
@@ -322,9 +371,20 @@ export function sanitizeBuildCode(value: unknown): SanitizedBuild {
   const archetypeId = raw.a;
   const rule = ARCHETYPES[archetypeId];
   const level = integer(raw.l, "level", 1, 100);
+  const clubLevel = integer(
+    raw.c ?? DEFAULT_CLUB_LEVEL,
+    "club level",
+    DEFAULT_CLUB_LEVEL,
+    Math.max(...CLUB_LEVELS),
+  );
+  if (!CLUB_LEVELS.has(clubLevel)) {
+    throw new BuildCodeError("club level is invalid");
+  }
   const height = integer(raw.h, "height", rule.height[0], rule.height[1]);
   const weight = integer(raw.w, "weight", rule.weight[0], rule.weight[1]);
   const attributes = sanitizeAttributeMap(raw.t, "t");
+  const facilities = sanitizeFacilities(raw.f, PLAYER_FACILITIES, "f");
+  const aiFacilities = sanitizeFacilities(raw.af, AI_FACILITIES, "af");
   const playstyles = sanitizeStringArray(raw.p, PLAYSTYLES, "p", 9);
   const purchases = sanitizePurchases(raw.pu);
   const disabledAttrs = sanitizeStringArray(
@@ -369,9 +429,12 @@ export function sanitizeBuildCode(value: unknown): SanitizedBuild {
   const source: GameBuild = {
     archetypeId,
     level,
+    clubLevel,
     height,
     weight,
     attributes,
+    facilities,
+    aiFacilities,
     playstyles,
     playstylePurchases: purchases,
     signatures,

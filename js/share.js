@@ -19,11 +19,14 @@ window.Share = (function () {
   }
 
   // ---- build <-> compact string ----
-  // v2: {v:2, a:archetypeId, l:level, h:height, w:weight,
-  //      t:{attrId:val}, p:[playstyleIds], pu:{playstyleId:{before,after}}}
+  // v2: {v:2, a:archetypeId, l:level, c:clubLevel, h:height, w:weight,
+  //      t:{attrId:val}, f:{playerFacilityId:star}, af:{aiFacilityId:star},
+  //      p:[playstyleIds], pu:{playstyleId:{before,after}}}
   function encode(build) {
-    const obj = { v: 2, a: build.archetypeId, l: build.level, h: build.height, w: build.weight };
+    const obj = { v: 2, a: build.archetypeId, l: build.level, c: build.clubLevel, h: build.height, w: build.weight };
     if (build.attributes && Object.keys(build.attributes).length) obj.t = build.attributes;
+    if (build.facilities && Object.keys(build.facilities).length) obj.f = build.facilities;
+    if (build.aiFacilities && Object.keys(build.aiFacilities).length) obj.af = build.aiFacilities;
     if (build.playstyles && build.playstyles.length) obj.p = build.playstyles;
     if (build.playstylePurchases && Object.keys(build.playstylePurchases).length) obj.pu = build.playstylePurchases;
     if (build.signatures && Object.keys(build.signatures).length) obj.s = build.signatures;
@@ -38,9 +41,12 @@ window.Share = (function () {
       return {
         archetypeId: o.a || null,
         level: o.l != null ? o.l : 1,
+        clubLevel: o.c != null ? o.c : 1,
         height: o.h != null ? o.h : window.DATA.defaultHeight,
         weight: o.w != null ? o.w : window.DATA.defaultWeight,
         attributes: o.t || {},
+        facilities: o.f || {},
+        aiFacilities: o.af || {},
         playstyles: o.p || [],
         playstylePurchases: o.pu || {},
         signatures: o.s || {},
@@ -90,9 +96,18 @@ window.Share = (function () {
     const attrName = (id) => (L.attribute[id] || id);
     const cats = d.arch.position === 'GK' ? d.categories : d.categories.filter((c) => c.id !== 'goalkeeping');
     // footer PlayStyle items: 4 signature (with +) + equipped regular items
-    const sigItems = C.signatureSlots(build, d.categories).filter((s) => s.playStyleId).map((s) => ({ id: s.playStyleId, plus: s.isPlus }));
-    const regItems = (build.playstyles || []).map((id) => ({ id, plus: false }));
-    const items = sigItems.concat(regItems);
+    const items = [];
+    const seenItems = new Set();
+    C.signatureSlots(build, d.categories).filter((slot) => slot.playStyleId).forEach((slot) => {
+      if (seenItems.has(slot.playStyleId)) return;
+      seenItems.add(slot.playStyleId);
+      items.push({ id: slot.playStyleId, plus: slot.isPlus });
+    });
+    [...(build.playstyles || []), ...((d.facilities && d.facilities.unlocks) || [])].forEach((id) => {
+      if (seenItems.has(id)) return;
+      seenItems.add(id);
+      items.push({ id, plus: false });
+    });
 
     // preload images
     const archImg = await loadImage('archetypes/' + d.arch.iconFileName);

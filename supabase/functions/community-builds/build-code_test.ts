@@ -57,6 +57,69 @@ Deno.test("canonicalizes a valid v2 build and removes unknown top-level fields",
   assert(second.code === result.code, "canonical code must be stable");
 });
 
+Deno.test("preserves valid player and AI Facilities with their shared club budget", () => {
+  const result = sanitizeBuildCode(encode({
+    v: 2,
+    a: "mid_creator",
+    l: 1,
+    c: 10,
+    h: 180,
+    w: 75,
+    f: { equipment_manager: 1 },
+    af: { ai_gk_goalkeeping_coach: 1 },
+    po: ["CAM"],
+  }));
+  const canonical = decode(result.code);
+  assert(canonical.c === 10);
+  assert(
+    JSON.stringify(canonical.f) === JSON.stringify({ equipment_manager: 1 }),
+  );
+  assert(
+    JSON.stringify(canonical.af) ===
+      JSON.stringify({ ai_gk_goalkeeping_coach: 1 }),
+  );
+});
+
+Deno.test("rejects unknown, invalid and over-budget Facilities", () => {
+  assertRejected({
+    v: 2,
+    a: "mid_creator",
+    l: 1,
+    c: 1,
+    h: 180,
+    w: 75,
+    f: { unknown: 1 },
+  }, /unsupported keys/u);
+  assertRejected({
+    v: 2,
+    a: "mid_creator",
+    l: 1,
+    c: 1,
+    h: 180,
+    w: 75,
+    af: { ai_gk_goalkeeping_coach: 4 },
+  }, /invalid/u);
+  assertRejected({
+    v: 2,
+    a: "mid_creator",
+    l: 1,
+    c: 1,
+    h: 180,
+    w: 75,
+    f: { equipment_manager: 3 },
+  });
+  assertRejected({
+    v: 2,
+    a: "mid_creator",
+    l: 1,
+    c: 1,
+    h: 180,
+    w: 75,
+    f: { equipment_manager: 2 },
+    af: { ai_gk_goalkeeping_coach: 2 },
+  });
+});
+
 Deno.test("normalizes goalkeeper position", () => {
   const result = sanitizeBuildCode(encode({
     v: 2,

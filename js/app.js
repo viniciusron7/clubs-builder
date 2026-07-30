@@ -12,14 +12,14 @@
   // -------------------- state --------------------
   function defaultBuild() {
     return {
-      archetypeId: null, level: 1,
+      archetypeId: null, level: 1, clubLevel: 1,
       height: D.defaultHeight, weight: D.defaultWeight,
-      attributes: {}, playstyles: [], playstylePurchases: {}, signatures: {}, positions: [], disabledAttrs: [], sumExcluded: [],
+      attributes: {}, facilities: {}, aiFacilities: {}, playstyles: [], playstylePurchases: {}, signatures: {}, positions: [], disabledAttrs: [], sumExcluded: [],
     };
   }
   let build = defaultBuild();
   const ui = {
-    view: 'community', filter: 'all', selectedAttr: null, modal: null,
+    view: 'community', filter: 'all', selectedAttr: null, modal: null, facilityKind: 'player',
     showWeights: false,
     optimizing: false, optimizeRunId: 0, optimizeController: null,
     psPicker: false,
@@ -281,6 +281,7 @@
     const tabs = [
       ['playStyles', L.tabs.playStyles, true],
       ['specializations', L.tabs.specializations, true],
+      ['facilities', L.tabs.facilities, true],
       ['body', L.tabs.body, true],
     ];
     const tabButtons = tabs.map(([id, label, requiresBuild]) => {
@@ -344,7 +345,7 @@
       </section>`).join('');
   }
   function attributeRow(a, d, weightProfile) {
-    const body = d.bodyAdj[a.id] || 0, cv = a.currentValue;
+    const body = d.bodyAdj[a.id] || 0, facility = d.facAdj[a.id] || 0, cv = a.currentValue;
     const selected = ui.selectedAttr === a.id;
     const tag = (v) => v === 0 ? '' : `<span class="font-bold text-sm min-w-3 ${v < 0 ? 'text-state-error' : 'text-state-success'}">${v > 0 ? '+' : ''}${v}</span>`;
     const nameEl = a.isKeyAttribute
@@ -358,7 +359,7 @@
       <button type="button" data-attr="${a.id}" aria-pressed="${selected}" class="attribute-row w-full text-left p-2.5 rounded-lg min-h-[54px] flex flex-col justify-center transition-all ${selected ? 'bg-b-primary ring-2 ring-state-info' : 'hover:bg-app-card active:bg-b-primary'}">
         <span class="attribute-row-top flex items-center justify-between mb-1.5 w-full">
           <span class="attribute-row-name flex items-center gap-2">${nameEl}</span>
-          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${tag(body)}<span class="attribute-value text-base font-bold text-white">${cv}</span></span>
+          <span class="attribute-row-metrics flex items-center gap-1.5">${weightEl}${tag(body)}${tag(facility)}<span class="attribute-value text-base font-bold text-white">${cv}</span></span>
         </span>
         ${attrMeter(a, cv)}
       </button>`;
@@ -394,6 +395,8 @@
       : '<span class="build-summary-empty">Pick a position to calculate OVR.</span>';
     const sigs = C.signatureSlots(build, d.categories).filter((s) => s.playStyleId);
     const equipped = build.playstyles || [];
+    const facilityGranted = [...d.facilities.unlocks].filter((id) =>
+      !sigs.some((slot) => slot.playStyleId === id) && !equipped.includes(id));
     const row = (label, value, cls) => `<div class="flex items-center justify-between text-sm"><span class="text-t-muted">${label}</span><span class="font-bold ${cls || 'text-white'}">${value}</span></div>`;
     const playStyleItem = (id, plus) => `
       <span class="build-summary-playstyle">
@@ -426,12 +429,13 @@
           ${d.accel ? row('AcceleRATE', d.accel, 'text-state-info') : ''}
           ${row('PlayStyle slots', `${equipped.length} / ${d.slots.unlocked}`)}
           ${row('Signature +', `${d.slots.signaturePlus} / 4`)}
+          ${row('Facilities', `${d.facilities.cost} / ${d.facilities.budget}`)}
         </section>
 
         <section class="build-summary-playstyles">
           <h4>Equipped PlayStyles</h4>
-          ${sigs.length || equipped.length
-            ? `<div>${sigs.map((s) => playStyleItem(s.playStyleId, s.isPlus)).join('')}${equipped.map((id) => playStyleItem(id, false)).join('')}</div>`
+          ${sigs.length || equipped.length || facilityGranted.length
+            ? `<div>${sigs.map((s) => playStyleItem(s.playStyleId, s.isPlus)).join('')}${equipped.map((id) => playStyleItem(id, false)).join('')}${facilityGranted.map((id) => playStyleItem(id, false)).join('')}</div>`
             : '<p>No PlayStyles equipped.</p>'}
         </section>
       </div>`;
@@ -439,7 +443,7 @@
   function attrEditor(d) {
     let attr = C.findAttr(d.categories, ui.selectedAttr);
     if (!attr) return placeholder('Select an attribute.');
-    const body = d.bodyAdj[attr.id] || 0, eff = d.effective[attr.id];
+    const body = d.bodyAdj[attr.id] || 0, facility = d.facAdj[attr.id] || 0, eff = d.effective[attr.id];
     const nextCost = C.apCostNextPoint(attr);
     const atMax = attr.currentValue >= attr.maxValue, atMin = attr.currentValue <= attr.baseValue;
     const canAfford = nextCost != null && d.ap.available >= nextCost;
@@ -448,7 +452,7 @@
     );
     const adj = (label, v) => `<div class="flex justify-between text-sm"><span class="text-t-muted">${label}</span><span class="font-bold ${v < 0 ? 'text-state-error' : v > 0 ? 'text-state-success' : 'text-t-secondary'}">${v > 0 ? '+' : ''}${v}</span></div>`;
     const relatedItem = (playStyle) => {
-      const eligible = C.playstyleEligible(playStyle, d.purchased);
+      const eligible = C.playstyleEligible(playStyle, d.purchased, d.facilities.unlocks);
       return `<span class="attribute-related-item ${eligible ? 'is-eligible' : ''}">
         <span class="attribute-related-icon">
           <img src="playstyles/${psIcon(playStyle.id)}" alt="" aria-hidden="true" />
@@ -488,6 +492,7 @@
           </section>` : ''}
         <div class="attribute-editor-breakdown bg-app-bg rounded-lg p-3 space-y-1.5 border border-b-primary">
           ${adj('Body', body)}
+          ${adj('Facilities', facility)}
           <div class="flex justify-between text-sm border-t border-b-primary pt-1.5 mt-1.5"><span class="text-t-secondary font-medium">Effective</span><span class="font-bold text-white">${eff}</span></div>
         </div>
       </div>`;
@@ -525,6 +530,7 @@
     if (ui.modal === 'body') { title = L.tabs.body; body = bodyModal(d); }
     else if (ui.modal === 'playStyles') { title = L.tabs.playStyles; body = playStylesModal(d); }
     else if (ui.modal === 'specializations') { title = L.tabs.specializations; body = specializationsModal(d); }
+    else if (ui.modal === 'facilities') { title = L.tabs.facilities; body = facilitiesModal(d); }
     else if (ui.modal === 'optimize') { title = 'Optimize Overall'; body = optimizeModal(d); }
     else if (ui.modal === 'maxsum') { title = 'Maximize Attribute Sum'; body = maxSumModal(d); }
     else if (ui.modal === 'utplayers') { title = 'UT Players'; body = utPlayersModal(d); }
@@ -646,6 +652,11 @@
       if (seen.has(id)) return;
       seen.add(id);
       result.push({ id, name: psName(id), plus: false, icon: `playstyles/${psIcon(id)}` });
+    });
+    info.derived.facilities.unlocks.forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      result.push({ id, name: psName(id), plus: false, facility: true, icon: `playstyles/${psIcon(id)}` });
     });
     return result;
   }
@@ -1428,6 +1439,7 @@
     const signatureById = new Map(C.signatureSlots(build, d.categories)
       .filter((slot) => slot.playStyleId)
       .map((slot) => [slot.playStyleId, slot]));
+    const facilityGranted = d.facilities.unlocks;
 
     // SLOTS (9 by level) — an empty slot opens the picker; a filled slot frees it.
     const unlockedSlotCount = d.slots.unlocked;
@@ -1445,9 +1457,9 @@
     }).join('');
 
     // picker: only items that are unlocked and not yet equipped
-    const pickable = D.playstyles.filter((p) => !signatureById.has(p.id)
+    const pickable = D.playstyles.filter((p) => !signatureById.has(p.id) && !facilityGranted.has(p.id)
       && !build.playstyles.includes(p.id)
-      && C.playstyleEligible(p, d.purchased));
+      && C.playstyleEligible(p, d.purchased, facilityGranted));
     const picker = !ui.psPicker ? '' : `
       <div class="ps-picker">
         <div class="ps-picker-head">
@@ -1465,16 +1477,19 @@
     D.playstyles.forEach((p) => { (byCat[p.category] = byCat[p.category] || []).push(p); });
     const psRow = (p) => {
       const signature = signatureById.get(p.id);
-      const eligible = !!signature || C.playstyleEligible(p, d.purchased);
+      const automatic = !signature && facilityGranted.has(p.id);
+      const eligible = !!signature || automatic || C.playstyleEligible(p, d.purchased, facilityGranted);
       const regularSlot = build.playstyles.indexOf(p.id);
-      const on = !!signature || regularSlot >= 0;
+      const on = !!signature || automatic || regularSlot >= 0;
       const receipt = build.playstylePurchases && build.playstylePurchases[p.id];
-      const sale = !signature && (receipt || regularSlot >= 0) ? playstyleSalePlan(p.id, d) : null;
+      const sale = !signature && !automatic && (receipt || regularSlot >= 0) ? playstyleSalePlan(p.id, d) : null;
       const unlockPlan = C.requirementUnlockPlan(p, d.categories);
       const canAffordUnlock = unlockPlan.feasible && unlockPlan.cost <= d.ap.available;
       const reqText = (p.requirements || []).map((r) => `${attrName(r.attributeId)} ${r.minValue}`).join(' · ');
       const status = signature
         ? 'Signature PlayStyle equipped'
+        : automatic
+          ? 'Equipped automatically by a Club Facility'
         : regularSlot >= 0
           ? `Equipped in slot ${regularSlot + 1}`
           : receipt
@@ -1486,7 +1501,7 @@
             : canAffordUnlock
               ? `Quick Unlock for ${unlockPlan.cost} AP`
               : `Need ${unlockPlan.cost} AP`;
-      const state = signature ? 'is-signature' : sale ? 'is-sellable' : on ? 'is-on' : eligible ? 'is-ready' : canAffordUnlock ? 'is-unlockable' : '';
+      const state = signature ? 'is-signature' : automatic ? 'is-facility' : sale ? 'is-sellable' : on ? 'is-on' : eligible ? 'is-ready' : canAffordUnlock ? 'is-unlockable' : '';
       const tag = sale || (!on && !eligible && unlockPlan.feasible) ? 'button' : 'div';
       const action = sale
         ? `type="button" data-ps-sell="${p.id}" data-refund="${sale.refund}"`
@@ -1495,6 +1510,8 @@
           : '';
       const costInfo = signature
         ? '<span class="ps-row-cost is-signature"><strong>0 AP</strong><small>✓ Equipped</small></span>'
+        : automatic
+          ? '<span class="ps-row-cost is-facility"><strong>0 AP</strong><small>✓ Facility</small></span>'
         : sale
           ? `<span class="ps-row-cost is-sellable">
               <span class="ps-sale-idle"><strong>0 AP</strong><small>✓ Unlocked</small></span>
@@ -1568,6 +1585,80 @@
         </div>`;
     };
     return `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${specs.map(card).join('')}</div>`;
+  }
+
+  // ---- Facilities modal ----
+  function facilitiesModal(d) {
+    const remaining = d.facilities.budget - d.facilities.cost;
+    const clubOptions = Object.keys(D.clubLevelBudgets).map((level) =>
+      `<option value="${level}" ${+level === build.clubLevel ? 'selected' : ''}>Level ${level}</option>`
+    ).join('');
+    const kind = ui.facilityKind === 'ai' ? 'ai' : 'player';
+    const definitions = kind === 'ai' ? D.aiFacilities : D.facilities;
+    const selected = kind === 'ai' ? build.aiFacilities : build.facilities;
+    const facilityCard = (definition) => {
+      const star = selected[definition.id] || 0;
+      const currentLevel = definition.levels[star];
+      const currentCost = currentLevel ? currentLevel.cost : 0;
+      const affected = (definition.affectedAttributes || []).map(attrName).join(', ');
+      const controls = definition.levels.map((level, index) => {
+        const difference = level.cost - currentCost;
+        const overBudget = index > star && difference > remaining;
+        const active = index === star;
+        const classes = active && star > 0
+          ? 'bg-btn-blue text-white'
+          : active
+            ? 'bg-app-card text-t-secondary'
+            : overBudget
+              ? 'bg-app-bg text-t-disabled cursor-not-allowed'
+              : 'bg-app-bg text-t-muted hover:bg-app-card';
+        const label = index === 0 ? 'Not selected' : `${index} star${index === 1 ? '' : 's'}`;
+        const title = index === 0
+          ? label
+          : `${level.cost} total · ${difference >= 0 ? '+' : ''}${difference} now${overBudget ? ' · over budget' : ''}`;
+        return `<button type="button" data-fac="${definition.id}" data-fac-kind="${kind}" data-star="${index}"
+          ${overBudget ? 'disabled' : ''} aria-pressed="${active}" aria-label="${esc(`${definition.name}: ${label}`)}"
+          title="${esc(title)}" class="facility-level ${classes}">${index === 0 ? '—' : '★'.repeat(index)}</button>`;
+      }).join('');
+      const granted = kind === 'player' && currentLevel && currentLevel.playstyle;
+      return `
+        <article class="facility-card ${star > 0 ? 'is-selected' : ''}">
+          <header>
+            <strong>${esc(definition.name)}</strong>
+            <span>${currentCost}</span>
+          </header>
+          <p title="${esc(affected)}">${esc(affected || (kind === 'ai' ? 'AI teammates' : 'Player facility'))}</p>
+          <div class="facility-levels">${controls}</div>
+          ${granted ? `<div class="facility-playstyle">
+            <img src="playstyles/${psIcon(granted)}" alt="" aria-hidden="true" />
+            <span>${esc(L.facilities.additionalPlaystyle)}: <strong>${esc(psName(granted))}</strong></span>
+          </div>` : ''}
+        </article>`;
+    };
+    return `
+      <div class="facilities-modal">
+        <div class="facilities-toolbar">
+          <div class="facilities-controls">
+            <label class="facility-club-label" for="club-level">Club level</label>
+            <select id="club-level" class="facility-club-level">${clubOptions}</select>
+            <div class="facility-kind" role="group" aria-label="Facility type">
+              <button type="button" data-fac-view="player" aria-pressed="${kind === 'player'}"
+                class="${kind === 'player' ? 'is-on' : ''}">Player</button>
+              <button type="button" data-fac-view="ai" aria-pressed="${kind === 'ai'}"
+                class="${kind === 'ai' ? 'is-on' : ''}">AI teammates</button>
+            </div>
+          </div>
+          <div class="facility-budget">
+            <span>${esc(L.facilities.remainingBudget)}</span>
+            <strong>${remaining} <small>/ ${d.facilities.budget}</small></strong>
+            <small>Player ${d.facilities.playerCost} · AI ${d.facilities.aiCost}</small>
+          </div>
+        </div>
+        <p class="facility-note">${kind === 'ai'
+          ? 'AI Facilities share the club budget and affect AI teammates only.'
+          : 'Player Facilities provide in-match attribute boosts. Three-star Facilities also equip their PlayStyle automatically without using a regular slot.'}</p>
+        <div class="facilities-grid">${definitions.map(facilityCard).join('')}</div>
+      </div>`;
   }
 
   // ---- Optimize modal ----
@@ -1840,15 +1931,17 @@
   // -------------------- mutations --------------------
   function setArchetype(id) {
     const arch = C.archetype(id);
-    const hadWork = Object.keys(build.attributes).length || build.playstyles.length || Object.keys(build.playstylePurchases || {}).length;
+    const hadWork = Object.keys(build.attributes).length || Object.keys(build.facilities || {}).length
+      || Object.keys(build.aiFacilities || {}).length || build.playstyles.length || Object.keys(build.playstylePurchases || {}).length;
     const outcome = commitBuildChange(() => {
       build.archetypeId = id;
-      build.attributes = {}; build.playstyles = []; build.playstylePurchases = {}; build.signatures = {};
+      build.attributes = {}; build.facilities = {}; build.aiFacilities = {};
+      build.playstyles = []; build.playstylePurchases = {}; build.signatures = {};
       build.height = C.clamp(build.height, Math.ceil(arch.minHeight), Math.floor(arch.maxHeight));
       build.weight = C.clamp(build.weight, Math.ceil(arch.minWeight), Math.floor(arch.maxWeight));
       ui.selectedAttr = null;
     });
-    if (outcome.changed && hadWork) toast('Archetype changed — attributes and PlayStyles reset · Ctrl+Z to undo');
+    if (outcome.changed && hadWork) toast('Archetype changed — attributes, Facilities and PlayStyles reset · Ctrl+Z to undo');
   }
   function adjustAttr(id, delta, mode) {
     const d = C.derive(build);
@@ -1902,6 +1995,9 @@
   }
   function sellPlaystyle(id) {
     const d = C.derive(build);
+    if (d.facilities.unlocks.has(id)) {
+      return toast('Facility PlayStyles are equipped automatically and cannot be sold.');
+    }
     if (C.signatureSlots(build, d.categories).some((slot) => slot.playStyleId === id)) {
       return toast('Signature PlayStyles are equipped automatically and cannot be sold.');
     }
@@ -1926,11 +2022,14 @@
     const d = C.derive(build);
     const ps = C.playstyle(id);
     if (!ps) return;
+    if (d.facilities.unlocks.has(id)) {
+      return toast('This PlayStyle is already equipped by a Club Facility.');
+    }
     if (C.signatureSlots(build, d.categories).some((slot) => slot.playStyleId === id)) {
       return toast('This Signature PlayStyle is already equipped.');
     }
     if (build.playstyles.includes(id)) return toast('Already equipped.');
-    if (!C.playstyleEligible(ps, d.purchased)) return toast('Requirements not met yet.');
+    if (!C.playstyleEligible(ps, d.purchased, d.facilities.unlocks)) return toast('Requirements not met yet.');
     if (build.playstyles.length >= d.slots.unlocked) return toast('No free PlayStyle slot.');
     commitBuildChange(() => { build.playstyles.push(id); ui.psPicker = false; });
     toast(`${psName(id)} equipped`);
@@ -1965,6 +2064,9 @@
     const ps = C.playstyle(playstyleId);
     if (!ps) return;
     const d = C.derive(build);
+    if (d.facilities.unlocks.has(playstyleId)) {
+      return toast('This PlayStyle is already unlocked and equipped by a Club Facility.');
+    }
     if (C.signatureSlots(build, d.categories).some((slot) => slot.playStyleId === playstyleId)) {
       return toast('This Signature PlayStyle is already unlocked and equipped.');
     }
@@ -1989,6 +2091,13 @@
       }
     });
     toast(`${psName(playstyleId)} unlocked · ${plan.cost} AP · pick a slot to equip it`);
+  }
+  function setFacility(id, star, kind) {
+    commitBuildChange(() => {
+      const selected = kind === 'ai' ? build.aiFacilities : build.facilities;
+      if (star === 0) delete selected[id];
+      else selected[id] = star;
+    });
   }
   function assignSpec(specId, slot) {
     const specName = (id) => { const s = D.specializations.find((x) => x.id === id); return s ? s.name : id; };
@@ -2179,7 +2288,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -2303,6 +2412,8 @@
       }
       if (t.dataset.psPick) return equipPlaystyle(t.dataset.psPick);
       if (t.hasAttribute('data-ps-picker-close')) { ui.psPicker = false; return refreshModal(); }
+      if (t.dataset.facView) { ui.facilityKind = t.dataset.facView; return refreshModal(); }
+      if (t.dataset.fac) return setFacility(t.dataset.fac, +t.dataset.star, t.dataset.facKind);
       if (t.dataset.utPos) {
         const p = t.dataset.utPos;
         if (p === 'all') ui.utPositions = [];
@@ -2321,10 +2432,10 @@
       if (t.id === 'btn-undo') return undoBuild();
       if (t.id === 'btn-redo') return redoBuild();
       if (t.id === 'btn-reset') {
-        if (!confirm('Reset attributes, PlayStyles and Specializations? Player level is kept.')) return;
+        if (!confirm('Reset attributes, Facilities, PlayStyles and Specializations? Player and club levels are kept.')) return;
         commitBuildChange(() => {
-          const { archetypeId, level } = build;
-          build = Object.assign(defaultBuild(), { archetypeId, level });
+          const { archetypeId, level, clubLevel } = build;
+          build = Object.assign(defaultBuild(), { archetypeId, level, clubLevel });
         });
         return toast('Build reset · Ctrl+Z to undo');
       }
@@ -2364,6 +2475,7 @@
     });
     document.body.addEventListener('change', (e) => {
       if (e.target.id === 'level-input') return render(); // restore the normalized value when leaving the field
+      if (e.target.id === 'club-level') return commitBuildChange(() => { build.clubLevel = parseInt(e.target.value, 10); });
       if (e.target.id === 'community-rarity') {
         ui.communityRarityId = e.target.value;
         return refreshModal();

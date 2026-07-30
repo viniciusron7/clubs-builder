@@ -107,7 +107,7 @@ await click('#btn-create-build');
 await waitFor(`!document.querySelector('#builder-app').hidden && document.querySelector('#btn-publish-build')`);
 assert.equal(await evaluate(`document.querySelector('#community-home').hidden`), true);
 assert.equal(await evaluate(`document.querySelector('#btn-publish-build').disabled`), true);
-assert.deepEqual(await evaluate(`[...document.querySelectorAll('.builder-tab-list .builder-tab')].map((button) => button.textContent.trim())`), ['PlayStyles', 'Specializations', 'Body']);
+assert.deepEqual(await evaluate(`[...document.querySelectorAll('.builder-tab-list .builder-tab')].map((button) => button.textContent.trim())`), ['PlayStyles', 'Specializations', 'Facilities', 'Body']);
 
 await click('[data-arch="fwd_finisher"]');
 assert.equal(await evaluate(`document.querySelector('#btn-publish-build').disabled`), false);
@@ -330,9 +330,60 @@ await click('#btn-undo'); // undo the quick unlock
 await click('[data-modal-close]');
 assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), buildBeforePlaystyleUnlock);
 
-assert.equal(await evaluate(`document.querySelectorAll('[data-modal="facilities"], [data-fac], [data-fac-view]').length`), 0);
-assert.equal(await evaluate(`document.querySelector('#tabs').innerText.includes('Facilities')`), false);
-assert.equal(await evaluate(`document.querySelector('#panel').innerText.includes('Facilities')`), false);
+const buildBeforeFacilities = await evaluate(`JSON.stringify(Share.fromUrl())`);
+assert.equal(await evaluate(`document.querySelectorAll('[data-modal="facilities"]').length`), 1);
+assert.equal(await evaluate(`document.querySelector('#tabs').innerText.includes('Facilities')`), true);
+assert.equal(await evaluate(`document.querySelector('#panel').innerText.includes('Facilities')`), true);
+await click('[data-modal="facilities"]');
+assert.equal(await evaluate(`document.querySelectorAll('.facilities-grid .facility-card').length`), 34);
+assert.match(await evaluate(`document.querySelector('.facility-note').innerText`), /attribute boosts/i);
+await evaluate(`(() => {
+  const select = document.querySelector('#club-level');
+  select.value = '10';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+await click('[data-fac="head_groundskeeper"][data-fac-kind="player"][data-star="3"]');
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl(), d = Calc.derive(b);
+  return b.clubLevel === 10
+    && b.facilities.head_groundskeeper === 3
+    && b.playstyles.length === 0
+    && d.facilities.playerCost === 1200
+    && d.facilities.unlocks.has('press_proven')
+    && d.facAdj.balance > 0;
+})()`), true);
+await click('[data-fac-view="ai"]');
+assert.equal(await evaluate(`document.querySelectorAll('.facilities-grid .facility-card').length`), 42);
+await click('[data-fac="ai_gk_goalkeeping_coach"][data-fac-kind="ai"][data-star="2"]');
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl(), d = Calc.derive(b);
+  return b.aiFacilities.ai_gk_goalkeeping_coach === 2
+    && d.facilities.aiCost === 800
+    && d.facilities.cost === 2000
+    && d.facilities.budget === 2500;
+})()`), true);
+await screenshot('/tmp/clubs-builder-facilities.png');
+await click('[data-modal-close]');
+assert.match(await evaluate(`document.querySelector('#panel').innerText`), /Facilities\s*2000 \/ 2500/i);
+await click('[data-modal="playStyles"]');
+await waitFor(`[...document.querySelectorAll('.available-playstyles-list img')].every((image) => image.complete)`);
+assert.equal(await evaluate(`document.querySelectorAll('.ps-row.is-facility').length`), 1);
+assert.match(await evaluate(`document.querySelector('.ps-row.is-facility').innerText`), /Facility/i);
+assert.equal(await evaluate(`!!document.querySelector('.ps-row.is-facility[data-ps-sell]')`), false);
+await click('[data-ps-slot="0"]');
+assert.equal(await evaluate(`[...document.querySelectorAll('[data-ps-pick]')].some((item) => item.dataset.psPick === 'press_proven')`), false);
+await click('[data-modal-close]');
+await click('[data-attr="balance"]');
+assert.match(await evaluate(`document.querySelector('#panel').innerText`), /Facilities\s*\+\d+/i);
+await click('[data-attr="balance"]');
+await click('#btn-undo');
+assert.equal(await evaluate(`Object.keys(Share.fromUrl().aiFacilities).length`), 0);
+await click('#btn-redo');
+assert.equal(await evaluate(`Share.fromUrl().aiFacilities.ai_gk_goalkeeping_coach`), 2);
+await click('#btn-undo');
+await click('#btn-undo');
+await click('#btn-undo');
+assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), buildBeforeFacilities);
 
 const attributesBeforeCancel = await evaluate(`JSON.stringify(Share.fromUrl().attributes)`);
 await click('#btn-optimize');
@@ -476,6 +527,21 @@ assert.deepEqual(await evaluate(`[...document.querySelectorAll('#modal-box img')
 await delay(100);
 errors.length = 0;
 await screenshot('/tmp/clubs-builder-mobile-playstyles.png');
+await click('[data-modal-close]');
+await click('[data-modal="facilities"]');
+const mobileFacilitiesLayout = await evaluate(`(() => {
+  const modal = document.querySelector('#modal-box');
+  const toolbar = document.querySelector('.facilities-toolbar');
+  return {
+    clientWidth: modal.clientWidth,
+    scrollWidth: modal.scrollWidth,
+    toolbarClientWidth: toolbar.clientWidth,
+    toolbarScrollWidth: toolbar.scrollWidth,
+  };
+})()`);
+assert.equal(mobileFacilitiesLayout.scrollWidth <= mobileFacilitiesLayout.clientWidth, true);
+assert.equal(mobileFacilitiesLayout.toolbarScrollWidth <= mobileFacilitiesLayout.toolbarClientWidth, true);
+await screenshot('/tmp/clubs-builder-mobile-facilities.png');
 await click('[data-modal-close]');
 
 // Community Builds configured state: gallery, cached author, publish and local-token deletion.
@@ -735,10 +801,11 @@ console.log(JSON.stringify({
   exportCanvas,
   mobileLayout,
   mobilePlaystylesLayout,
+  mobileFacilitiesLayout,
   communityDesktopLayout,
   communityMobileLayout,
   communityMobilePublisherLayout,
-  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-mobile-playstyles.png', '/tmp/clubs-builder-community-publisher.png', '/tmp/clubs-builder-community-desktop.png', '/tmp/clubs-builder-community-mobile.png', '/tmp/clubs-builder-community-mobile-publisher.png'],
+  screenshots: ['/tmp/clubs-builder-desktop.png', '/tmp/clubs-builder-mobile.png', '/tmp/clubs-builder-playstyles-quick-unlock.png', '/tmp/clubs-builder-playstyles-sell-hover.png', '/tmp/clubs-builder-facilities.png', '/tmp/clubs-builder-mobile-playstyles.png', '/tmp/clubs-builder-mobile-facilities.png', '/tmp/clubs-builder-community-publisher.png', '/tmp/clubs-builder-community-desktop.png', '/tmp/clubs-builder-community-mobile.png', '/tmp/clubs-builder-community-mobile-publisher.png'],
 }, null, 2));
 
 socket.close();

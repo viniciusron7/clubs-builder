@@ -6,7 +6,7 @@ test('history restores complete build state and clears redo after a new change',
   const { BuildHistory } = createContext(['js/history.js']);
   const history = BuildHistory.create(3);
   const first = defaultBuild();
-  const second = defaultBuild({ level: 100, attributes: { finishing: 90 } });
+  const second = defaultBuild({ level: 100, facilities: { equipment_manager: 1 }, aiFacilities: { ai_gk_goalkeeping_coach: 1 } });
   const third = defaultBuild({ level: 90, positions: ['ST', 'CAM'] });
   assert.equal(history.record(first, second), true);
   let result = history.undo(second);
@@ -18,11 +18,12 @@ test('history restores complete build state and clears redo after a new change',
   assert.equal(history.canRedo(), false);
 });
 
-test('v2 share links preserve PlayStyle purchases, ignore removed Facilities fields and v1 remains readable', () => {
+test('v2 share links preserve Facilities and PlayStyle purchases while v1 remains readable', () => {
   const { Share } = createContext(['js/data.js', 'js/share.js']);
   const build = defaultBuild({
-    facilities: { player_fac: 1 },
-    aiFacilities: { ai_fac: 2 },
+    clubLevel: 10,
+    facilities: { equipment_manager: 1 },
+    aiFacilities: { ai_gk_goalkeeping_coach: 2 },
     positions: ['ST', 'CAM'],
     playstylePurchases: {
       finesse_shot: {
@@ -32,18 +33,18 @@ test('v2 share links preserve PlayStyle purchases, ignore removed Facilities fie
     },
   });
   const decoded = Share.decode(Share.encode(build));
-  assert.equal('facilities' in decoded, false);
-  assert.equal('aiFacilities' in decoded, false);
-  assert.equal('clubLevel' in decoded, false);
+  assert.equal(decoded.clubLevel, build.clubLevel);
+  assert.equal(JSON.stringify(decoded.facilities), JSON.stringify(build.facilities));
+  assert.equal(JSON.stringify(decoded.aiFacilities), JSON.stringify(build.aiFacilities));
   assert.equal(JSON.stringify(decoded.positions), JSON.stringify(build.positions));
   assert.equal(JSON.stringify(decoded.playstylePurchases), JSON.stringify(build.playstylePurchases));
 
   const legacyJson = JSON.stringify({ a: 'fwd_finisher', l: 50, c: 10, f: { legacy: 1 }, af: { old_ai: 2 }, po: ['ST'] });
   const legacy = Buffer.from(legacyJson).toString('base64url');
   const decodedLegacy = Share.decode(legacy);
-  assert.equal('facilities' in decodedLegacy, false);
-  assert.equal('aiFacilities' in decodedLegacy, false);
-  assert.equal('clubLevel' in decodedLegacy, false);
+  assert.equal(JSON.stringify(decodedLegacy.facilities), JSON.stringify({ legacy: 1 }));
+  assert.equal(JSON.stringify(decodedLegacy.aiFacilities), JSON.stringify({ old_ai: 2 }));
+  assert.equal(decodedLegacy.clubLevel, 10);
   assert.equal(decodedLegacy.level, 50);
   assert.equal(Share.decode('not-valid-base64'), null);
 });

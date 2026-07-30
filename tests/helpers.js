@@ -29,9 +29,12 @@ function defaultBuild(overrides = {}) {
   return {
     archetypeId: 'fwd_finisher',
     level: 100,
+    clubLevel: 1,
     height: 180,
     weight: 75,
     attributes: {},
+    facilities: {},
+    aiFacilities: {},
     playstyles: [],
     playstylePurchases: {},
     signatures: {},

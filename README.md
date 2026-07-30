@@ -22,9 +22,14 @@ python3 -m http.server 4173 --bind 0.0.0.0
   for key attributes. The maximum level is **100**, with **3167 total AP**. The
   editor includes +/− controls, a slider, next-point cost, and a breakdown. The
   six outfield categories also display their calculated face-stat OVRs:
-  **PAC, SHO, PAS, DRI, DEF, and PHY**, using body-adjusted effective values.
+  **PAC, SHO, PAS, DRI, DEF, and PHY**, using effective values after body and
+  player-Facility adjustments.
 - **Body** — height and weight (limited by the archetype) adjust attributes using
   the actual formula and calculate **AcceleRATE** (Explosive/Lengthy/Controlled).
+- **Club Facilities** — 34 player Facilities and 42 AI Facilities, with up to
+  three stars and one budget shared by both groups. Player Facilities provide
+  in-match attribute boosts and can automatically equip PlayStyles without
+  consuming a regular slot; AI Facilities affect AI teammates only.
 - **PlayStyles** (modal) — 4 **signature** PlayStyles (upgraded to "+" at levels
   30/50/75/95) plus 9 regular slots unlocked by level
   (1/10/20/40/60/70/80/90/95). Locked PlayStyles provide **Quick Unlock**, which
@@ -37,9 +42,9 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Positions + estimated OVR** — select one or more outfield positions; GK is
   automatic for goalkeepers. Each position is calculated independently by
   `js/weights.js` using purchased attributes only:
-  `OVR = floor(intercept + Σ weight·attribute) - 1`, clamped to 1–99. Height and
-  weight affect in-match attributes, not the estimated lobby OVR. The expected
-  tolerance is ±1.
+  `OVR = floor(intercept + Σ weight·attribute) - 1`, clamped to 1–99. Height,
+  weight, and Facilities affect in-match attributes, not the estimated lobby
+  OVR. The expected tolerance is ±1.
 - The v2 model was validated against Common/Rare base cards: 93.43% exact and
   99.995% within ±1 across 19,363 outfield players; 88.05% exact and 100% within
   ±1 across 2,528 players rated 75+; and 98.05% exact and 100% within ±1 across
@@ -84,8 +89,8 @@ python3 -m http.server 4173 --bind 0.0.0.0
   Supabase and Cloudflare Turnstile with RLS, catalog validation, CORS, and
   publication limits.
 
-The home page displays Community Builds and a **Create Build** action. The three
-configuration tabs (PlayStyles / Specializations / Body) open **modals** inside
+The home page displays Community Builds and a **Create Build** action. The four
+configuration tabs (PlayStyles / Specializations / Facilities / Body) open **modals** inside
 the builder. Publish Build is a separate call to action in the tools bar and its
 modal contains only the publication workflow. The main editor area displays
 attributes and the selected attribute's detail panel.
@@ -106,7 +111,7 @@ clubs-builder/
     app.css           # additions (missing utilities and adjustments)
   js/
     data.js           # ALL game data (extracted and normalized)
-    calc.js           # pure mechanics (AP, body, PlayStyles, eligibility...)
+    calc.js           # pure mechanics (AP, body, Facilities, PlayStyles...)
     optimizer-worker.js # multi-position solver outside the UI thread
     history.js        # immutable undo/redo history
     share.js          # URL encode/decode and canvas image export
@@ -132,8 +137,8 @@ only the function URL and public Turnstile site key belong in
 ## Notes
 
 - Data was faithfully extracted from the original build chunks (archetypes,
-  attributes, PlayStyles, AP cost tables, AP-per-level tables, and English
-  translations).
+  attributes, Facilities, PlayStyles, AP cost tables, AP-per-level tables, and
+  English translations).
 - The interface is English-only, matching the source content.
 - URL encoding is custom and compact; it is **not** compatible with
   clubsbuilder.com.
