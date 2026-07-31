@@ -523,6 +523,19 @@ await evaluate(`localStorage.removeItem('fc26-player-facility-presets-v1')`);
 await click('[data-modal="facilities"]');
 assert.equal(await evaluate(`document.querySelectorAll('.facility-accordion-list .facility-accordion').length`), 34);
 assert.match(await evaluate(`document.querySelector('.facility-note').innerText`), /attribute boosts/i);
+const playerFacilityGridLayout = await evaluate(`(() => {
+  const list = document.querySelector('.facility-accordion-list');
+  const cards = [...list.querySelectorAll('.facility-accordion')];
+  const columns = new Set(cards.slice(0, 8).map((card) => Math.round(card.getBoundingClientRect().left)));
+  return {
+    columns: columns.size,
+    cardWidth: cards[0].getBoundingClientRect().width,
+    cardHeight: cards[0].getBoundingClientRect().height,
+  };
+})()`);
+assert.equal(playerFacilityGridLayout.columns >= 4, true);
+assert.equal(playerFacilityGridLayout.cardWidth >= 250, true);
+assert.equal(playerFacilityGridLayout.cardHeight < 100, true);
 assert.equal(await evaluate(`(() => {
   const toggles = [...document.querySelectorAll('.facility-accordion-toggle')];
   return toggles.length === 34 && toggles.every((toggle) => {
@@ -550,7 +563,16 @@ await evaluate(`(() => {
   select.dispatchEvent(new Event('change', { bubbles: true }));
 })()`);
 await click('[data-fac-toggle="head_groundskeeper"]');
+const facilityScrollBeforeSelection = await evaluate(`(() => {
+  const scroller = document.querySelector('#modal-box .modal-scroll');
+  const maximum = scroller.scrollHeight - scroller.clientHeight;
+  scroller.scrollTop = Math.min(120, maximum);
+  return { top: scroller.scrollTop, maximum };
+})()`);
+assert.equal(facilityScrollBeforeSelection.maximum > 20, true);
 await click('[data-fac="head_groundskeeper"][data-fac-kind="player"][data-star="3"]');
+const facilityScrollAfterSelection = await evaluate(`document.querySelector('#modal-box .modal-scroll').scrollTop`);
+assert.equal(Math.abs(facilityScrollAfterSelection - facilityScrollBeforeSelection.top) <= 1, true);
 assert.equal(await evaluate(`(() => {
   const b = Share.fromUrl(), d = Calc.derive(b);
   return b.clubLevel === 10

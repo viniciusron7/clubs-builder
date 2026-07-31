@@ -541,7 +541,7 @@
         <h2 id="modal-title" class="text-xl sm:text-2xl font-bold text-white tracking-wider uppercase">${esc(title)}</h2>
         <button data-modal-close aria-label="Close ${esc(title)}" class="w-11 h-11 flex items-center justify-center rounded-lg bg-app-card hover:bg-b-primary text-t-muted text-lg transition-colors">✕</button>
       </div>
-      <div class="overflow-y-auto p-4 sm:p-6">${bodyHtml}</div>`;
+      <div class="modal-scroll overflow-y-auto p-4 sm:p-6">${bodyHtml}</div>`;
   }
   function setModalBackgroundInert(open) {
     [$('#main-content'), document.querySelector('.app-footer')].forEach((element) => {
@@ -553,6 +553,11 @@
   }
   function renderModal(d) {
     const root = $('#modal-root'), box = $('#modal-box');
+    const previousKind = box.dataset.modalKind;
+    const previousScroller = box.querySelector('.modal-scroll');
+    const preservedScrollTop = previousKind === ui.modal && previousScroller
+      ? previousScroller.scrollTop
+      : 0;
     const canOpenWithoutBuild = ui.modal === 'community' || ui.modal === 'screenshot-import';
     if (!ui.modal || (!d.arch && !canOpenWithoutBuild)) {
       root.classList.add('hidden');
@@ -574,6 +579,8 @@
     else if (ui.modal === 'screenshot-import') { title = 'Import game screenshot'; body = screenshotImportModal(d); }
     box.dataset.modalKind = ui.modal;
     box.innerHTML = modalShell(title, body);
+    const nextScroller = box.querySelector('.modal-scroll');
+    if (nextScroller) nextScroller.scrollTop = preservedScrollTop;
     root.classList.remove('hidden'); root.classList.add('flex');
     setModalBackgroundInert(true);
     if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }); // keepFocus restores the field afterward when needed
