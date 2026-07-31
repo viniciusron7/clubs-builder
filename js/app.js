@@ -2,10 +2,11 @@
  * app.js — FC 26 Pro Clubs Builder controller (state + UI + events).
  * Faithful to the original layout: attributes are always visible with the detail
  * panel on the right; Community Builds is the home view and configuration actions open modals.
- * Depends on window.DATA, window.Calc, window.Share, and window.ScreenshotImport.
+ * Depends on window.DATA, window.Calc, window.Share, window.FacilityPresets,
+ * and window.ScreenshotImport.
  * ========================================================================== */
 (function () {
-  const D = window.DATA, C = window.Calc, S = window.Share, BC = window.BuildCard, L = window.DATA.labels;
+  const D = window.DATA, C = window.Calc, S = window.Share, BC = window.BuildCard, FP = window.FacilityPresets, L = window.DATA.labels;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -21,6 +22,7 @@
   let build = defaultBuild();
   const ui = {
     view: 'community', filter: 'all', selectedAttr: null, modal: null, facilityKind: 'player',
+    facilityOpenId: null, facilityPresets: [], facilityPresetName: '', facilityPresetStorageAvailable: true,
     showWeights: false,
     optimizing: false, optimizeRunId: 0, optimizeController: null,
     psPicker: false,
@@ -45,6 +47,7 @@
   const UT_RENDER_LIMIT = 250;
   const HISTORY_LIMIT = 100;
   const history = window.BuildHistory.create(HISTORY_LIMIT);
+  const facilityPresetStore = FP && typeof FP.create === 'function' ? FP.create(D.facilities) : null;
   let modalReturnFocus = null;
 
   // Rebuilding a section with innerHTML discards the focused element — the LVL field
@@ -1951,6 +1954,227 @@
   }
 
   // ---- Facilities modal ----
+  function facilityCurrency(value) {
+    const amount = Math.max(0, Number(value) || 0);
+    if (amount >= 1000) {
+      const millions = amount / 1000;
+      return `$${Number.isInteger(millions) ? millions.toFixed(0) : millions.toFixed(1)}M`;
+    }
+    return `$${amount}K`;
+  }
+
+  function loadFacilityPresets() {
+    ui.facilityPresetStorageAvailable = !!(facilityPresetStore && facilityPresetStore.isAvailable());
+    ui.facilityPresets = ui.facilityPresetStorageAvailable ? facilityPresetStore.list() : [];
+  }
+
+  function facilityPresetErrorMessage(error) {
+    if (error === 'name_too_long') return 'Club names can contain up to 40 characters.';
+    if (error === 'limit_reached') return 'You can save up to 20 clubs in this browser.';
+    return 'This browser could not save the club locally.';
+  }
+
+  function saveFacilityPreset() {
+    if (!facilityPresetStore || !ui.facilityPresetStorageAvailable) {
+      return toast('Browser storage is unavailable on this device.');
+    }
+    const normalizedName = ui.facilityPresetName.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+    const updating = normalizedName && ui.facilityPresets.some((preset) =>
+      preset.name.toLocaleLowerCase('en-US') === normalizedName);
+    const result = facilityPresetStore.save(ui.facilityPresetName, build.facilities || {});
+    if (!result.ok) {
+      ui.facilityPresetStorageAvailable = facilityPresetStore.isAvailable();
+      refreshModal();
+      return toast(facilityPresetErrorMessage(result.error));
+    }
+    ui.facilityPresets = result.presets;
+    ui.facilityPresetName = '';
+    refreshModal();
+    toast(`${result.preset.name} ${updating ? 'updated' : 'saved'} in this browser.`);
+  }
+
+  function applyFacilityPreset(id) {
+    const preset = ui.facilityPresets.find((entry) => entry.id === id);
+    if (!preset || !facilityPresetStore) return toast('Saved club not found.');
+    const facilities = facilityPresetStore.sanitizeFacilities(preset.facilities);
+    const required = C.facilityCost(facilities) + C.facilityCost(build.aiFacilities || {});
+    const available = C.budget(build.clubLevel);
+    if (required > available) {
+      return toast(`${preset.name} needs ${facilityCurrency(required)}; the current club budget is ${facilityCurrency(available)}.`);
+    }
+    const outcome = commitBuildChange(() => { build.facilities = { ...facilities }; });
+    toast(outcome.changed ? `${preset.name} applied.` : `${preset.name} is already applied.`);
+  }
+
+  function deleteFacilityPreset(id) {
+    const preset = ui.facilityPresets.find((entry) => entry.id === id);
+    if (!preset || !facilityPresetStore) return toast('Saved club not found.');
+    if (!confirm(`Delete the saved club "${preset.name}" from this browser?`)) return;
+    const result = facilityPresetStore.remove(id);
+    if (!result.ok) {
+      ui.facilityPresetStorageAvailable = facilityPresetStore.isAvailable();
+      refreshModal();
+      return toast(facilityPresetErrorMessage(result.error));
+    }
+    ui.facilityPresets = result.presets;
+    refreshModal();
+    toast(`${preset.name} deleted from this browser.`);
+  }
+
+  function facilityPresetPanel() {
+    const presets = ui.facilityPresets;
+    const storageAvailable = ui.facilityPresetStorageAvailable;
+    const selectedCount = Object.keys(build.facilities || {}).length;
+    const savedRows = presets.length
+      ? presets.map((preset) => {
+        const count = Object.keys(preset.facilities || {}).length;
+        const cost = C.facilityCost(preset.facilities || {});
+        return `
+          <article class="facility-preset" data-facility-preset="${esc(preset.id)}">
+            <button type="button" class="facility-preset-apply" data-fac-preset-apply="${esc(preset.id)}">
+              <span>
+                <strong>${esc(preset.name)}</strong>
+                <small>${count} ${count === 1 ? 'Facility' : 'Facilities'} · ${facilityCurrency(cost)}</small>
+              </span>
+              <span aria-hidden="true">Apply</span>
+            </button>
+            <button type="button" class="facility-preset-delete" data-fac-preset-delete="${esc(preset.id)}"
+              aria-label="${esc(`Delete ${preset.name}`)}" title="${esc(`Delete ${preset.name}`)}">✕</button>
+          </article>`;
+      }).join('')
+      : '<p class="facility-presets-empty">No saved clubs yet.</p>';
+    return `
+      <section class="facility-presets" aria-labelledby="facility-presets-title">
+        <div class="facility-presets-head">
+          <div>
+            <h3 id="facility-presets-title">Saved clubs</h3>
+            <p>Save this Player Facilities setup only in this browser.</p>
+          </div>
+          <span>${presets.length} / ${FP ? FP.limits.maxPresets : 20}</span>
+        </div>
+        <div class="facility-preset-create">
+          <label for="facility-preset-name">Club name <span>optional</span></label>
+          <div>
+            <input id="facility-preset-name" type="text" maxlength="${FP ? FP.limits.maxNameLength : 40}"
+              autocomplete="off" placeholder="e.g. VFC" value="${esc(ui.facilityPresetName)}"
+              ${storageAvailable ? '' : 'disabled'} />
+            <button type="button" data-fac-preset-save ${storageAvailable ? '' : 'disabled'}>
+              Save current <span>(${selectedCount})</span>
+            </button>
+          </div>
+        </div>
+        <div class="facility-presets-list">${savedRows}</div>
+        <p class="facility-presets-note">${storageAvailable
+          ? 'Applying a saved club replaces Player Facilities only. AI Facilities stay unchanged.'
+          : 'Browser storage is unavailable, so saved clubs cannot be used on this device.'}</p>
+      </section>`;
+  }
+
+  function playerFacilityAccordion(definition, selected, remaining) {
+    const star = selected[definition.id] || 0;
+    const currentLevel = definition.levels[star];
+    const currentCost = currentLevel ? currentLevel.cost : 0;
+    const affected = (definition.affectedAttributes || []).map(attrName);
+    const finalLevel = definition.levels[definition.levels.length - 1] || {};
+    const granted = finalLevel.playstyle;
+    const open = ui.facilityOpenId === definition.id;
+    const panelId = `facility-panel-${definition.id}`;
+    const levelCards = definition.levels.slice(1).map((level, offset) => {
+      const index = offset + 1;
+      const difference = level.cost - currentCost;
+      const overBudget = index > star && difference > remaining;
+      const active = index === star;
+      const boosts = (level.attributeBoosts || []).map((boost) => `
+        <span class="facility-tier-boost">
+          <span>${esc(attrName(boost.attributeId))}:</span>
+          <strong>+${boost.value}</strong>
+        </span>`).join('');
+      const unlock = level.playstyle;
+      return `
+        <button type="button" id="facility-level-${definition.id}-${index}"
+          class="facility-tier-card ${active ? 'is-selected' : ''}"
+          data-fac="${definition.id}" data-fac-kind="player" data-star="${index}"
+          ${overBudget ? 'disabled' : ''} aria-pressed="${active}"
+          aria-label="${esc(`${definition.name}, Level ${index}, ${facilityCurrency(level.cost)}${overBudget ? ', over budget' : ''}`)}">
+          <span class="facility-tier-head">
+            <strong>Level ${index}</strong>
+            <span>${facilityCurrency(level.cost)}</span>
+          </span>
+          <span class="facility-tier-boosts">${boosts}</span>
+          ${unlock ? `<span class="facility-tier-unlock">
+            <img src="playstyles/${psIcon(unlock)}" alt="" aria-hidden="true" />
+            <span>Unlocks: <strong>${esc(psName(unlock))}</strong></span>
+          </span>` : ''}
+          ${active ? '<small class="facility-tier-selected">Selected</small>' : ''}
+          ${overBudget ? '<small class="facility-tier-unavailable">Over budget</small>' : ''}
+        </button>`;
+    }).join('');
+    return `
+      <article class="facility-accordion ${open ? 'is-open' : ''} ${star > 0 ? 'is-selected' : ''}">
+        <h3>
+          <button type="button" id="facility-toggle-${definition.id}"
+            class="facility-accordion-toggle" data-fac-toggle="${definition.id}"
+            aria-expanded="${open}" aria-controls="${panelId}">
+            <span class="facility-accordion-chevron" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="m9 18 6-6-6-6" /></svg>
+            </span>
+            <span class="facility-accordion-copy">
+              <span class="facility-accordion-title">
+                <strong>${esc(definition.name)}</strong>
+                ${star ? `<span>Level ${star} · ${facilityCurrency(currentCost)}</span>` : ''}
+              </span>
+              <span class="facility-accordion-meta" aria-label="${esc(`Affects ${affected.join(' and ')}`)}">
+                ${granted ? `<img src="playstyles/${psIcon(granted)}" alt="" aria-hidden="true" />` : ''}
+                ${affected.map((name) => `<span aria-hidden="true">•</span><span>${esc(name)}</span>`).join('')}
+              </span>
+            </span>
+          </button>
+        </h3>
+        <div id="${panelId}" class="facility-accordion-panel" role="region"
+          aria-labelledby="facility-toggle-${definition.id}" ${open ? '' : 'hidden'}>
+          <div class="facility-tier-list">${levelCards}</div>
+          ${star ? `<button type="button" id="facility-clear-${definition.id}"
+            class="facility-clear" data-fac="${definition.id}"
+            data-fac-kind="player" data-star="0">Remove ${esc(definition.name)}</button>` : ''}
+        </div>
+      </article>`;
+  }
+
+  function aiFacilityCard(definition, selected, remaining) {
+    const star = selected[definition.id] || 0;
+    const currentLevel = definition.levels[star];
+    const currentCost = currentLevel ? currentLevel.cost : 0;
+    const affected = (definition.affectedAttributes || []).map(attrName).join(', ');
+    const controls = definition.levels.map((level, index) => {
+      const difference = level.cost - currentCost;
+      const overBudget = index > star && difference > remaining;
+      const active = index === star;
+      const classes = active && star > 0
+        ? 'bg-btn-blue text-white'
+        : active
+          ? 'bg-app-card text-t-secondary'
+          : overBudget
+            ? 'bg-app-bg text-t-disabled cursor-not-allowed'
+            : 'bg-app-bg text-t-muted hover:bg-app-card';
+      const label = index === 0 ? 'Not selected' : `${index} star${index === 1 ? '' : 's'}`;
+      const title = index === 0
+        ? label
+        : `${facilityCurrency(level.cost)} total · ${difference >= 0 ? '+' : '-'}${facilityCurrency(Math.abs(difference))} now${overBudget ? ' · over budget' : ''}`;
+      return `<button type="button" data-fac="${definition.id}" data-fac-kind="ai" data-star="${index}"
+        ${overBudget ? 'disabled' : ''} aria-pressed="${active}" aria-label="${esc(`${definition.name}: ${label}`)}"
+        title="${esc(title)}" class="facility-level ${classes}">${index === 0 ? '—' : '★'.repeat(index)}</button>`;
+    }).join('');
+    return `
+      <article class="facility-card ${star > 0 ? 'is-selected' : ''}">
+        <header>
+          <strong>${esc(definition.name)}</strong>
+          <span>${facilityCurrency(currentCost)}</span>
+        </header>
+        <p title="${esc(affected)}">${esc(affected || 'AI teammates')}</p>
+        <div class="facility-levels">${controls}</div>
+      </article>`;
+  }
+
   function facilitiesModal(d) {
     const remaining = d.facilities.budget - d.facilities.cost;
     const clubOptions = Object.keys(D.clubLevelBudgets).map((level) =>
@@ -1959,45 +2183,6 @@
     const kind = ui.facilityKind === 'ai' ? 'ai' : 'player';
     const definitions = kind === 'ai' ? D.aiFacilities : D.facilities;
     const selected = kind === 'ai' ? build.aiFacilities : build.facilities;
-    const facilityCard = (definition) => {
-      const star = selected[definition.id] || 0;
-      const currentLevel = definition.levels[star];
-      const currentCost = currentLevel ? currentLevel.cost : 0;
-      const affected = (definition.affectedAttributes || []).map(attrName).join(', ');
-      const controls = definition.levels.map((level, index) => {
-        const difference = level.cost - currentCost;
-        const overBudget = index > star && difference > remaining;
-        const active = index === star;
-        const classes = active && star > 0
-          ? 'bg-btn-blue text-white'
-          : active
-            ? 'bg-app-card text-t-secondary'
-            : overBudget
-              ? 'bg-app-bg text-t-disabled cursor-not-allowed'
-              : 'bg-app-bg text-t-muted hover:bg-app-card';
-        const label = index === 0 ? 'Not selected' : `${index} star${index === 1 ? '' : 's'}`;
-        const title = index === 0
-          ? label
-          : `${level.cost} total · ${difference >= 0 ? '+' : ''}${difference} now${overBudget ? ' · over budget' : ''}`;
-        return `<button type="button" data-fac="${definition.id}" data-fac-kind="${kind}" data-star="${index}"
-          ${overBudget ? 'disabled' : ''} aria-pressed="${active}" aria-label="${esc(`${definition.name}: ${label}`)}"
-          title="${esc(title)}" class="facility-level ${classes}">${index === 0 ? '—' : '★'.repeat(index)}</button>`;
-      }).join('');
-      const granted = kind === 'player' && currentLevel && currentLevel.playstyle;
-      return `
-        <article class="facility-card ${star > 0 ? 'is-selected' : ''}">
-          <header>
-            <strong>${esc(definition.name)}</strong>
-            <span>${currentCost}</span>
-          </header>
-          <p title="${esc(affected)}">${esc(affected || (kind === 'ai' ? 'AI teammates' : 'Player facility'))}</p>
-          <div class="facility-levels">${controls}</div>
-          ${granted ? `<div class="facility-playstyle">
-            <img src="playstyles/${psIcon(granted)}" alt="" aria-hidden="true" />
-            <span>${esc(L.facilities.additionalPlaystyle)}: <strong>${esc(psName(granted))}</strong></span>
-          </div>` : ''}
-        </article>`;
-    };
     return `
       <div class="facilities-modal">
         <div class="facilities-toolbar">
@@ -2006,21 +2191,26 @@
             <select id="club-level" class="facility-club-level">${clubOptions}</select>
             <div class="facility-kind" role="group" aria-label="Facility type">
               <button type="button" data-fac-view="player" aria-pressed="${kind === 'player'}"
-                class="${kind === 'player' ? 'is-on' : ''}">Player</button>
+                class="${kind === 'player' ? 'is-on' : ''}">Player Facilities</button>
               <button type="button" data-fac-view="ai" aria-pressed="${kind === 'ai'}"
-                class="${kind === 'ai' ? 'is-on' : ''}">AI teammates</button>
+                class="${kind === 'ai' ? 'is-on' : ''}">AI Facilities</button>
             </div>
           </div>
-          <div class="facility-budget">
+          <div class="facility-budget" aria-live="polite">
             <span>${esc(L.facilities.remainingBudget)}</span>
-            <strong>${remaining} <small>/ ${d.facilities.budget}</small></strong>
-            <small>Player ${d.facilities.playerCost} · AI ${d.facilities.aiCost}</small>
+            <strong>${facilityCurrency(remaining)} <small>/ ${facilityCurrency(d.facilities.budget)}</small></strong>
+            <small>Player ${facilityCurrency(d.facilities.playerCost)} · AI ${facilityCurrency(d.facilities.aiCost)}</small>
           </div>
         </div>
+        ${kind === 'player' ? facilityPresetPanel() : ''}
         <p class="facility-note">${kind === 'ai'
           ? 'AI Facilities share the club budget and affect AI teammates only.'
           : 'Player Facilities provide in-match attribute boosts. Three-star Facilities also equip their PlayStyle automatically without using a regular slot.'}</p>
-        <div class="facilities-grid">${definitions.map(facilityCard).join('')}</div>
+        ${kind === 'player'
+          ? `<div class="facility-accordion-list" data-facility-kind="player">${definitions.map((definition) =>
+            playerFacilityAccordion(definition, selected, remaining)).join('')}</div>`
+          : `<div class="facilities-grid" data-facility-kind="ai">${definitions.map((definition) =>
+            aiFacilityCard(definition, selected, remaining)).join('')}</div>`}
       </div>`;
   }
 
@@ -2562,6 +2752,7 @@
     ui.modal = id;
     ui.selectedAttr = null;
     ui.psPicker = false;
+    if (id === 'facilities') loadFacilityPresets();
     if (id === 'community') {
       const api = communityApi();
       try {
@@ -2661,6 +2852,7 @@
 
   // -------------------- events --------------------
   function init() {
+    loadFacilityPresets();
     const fromUrl = S.fromUrl();
     let adjustedFromUrl = false;
     if (fromUrl && fromUrl.archetypeId) {
@@ -2671,7 +2863,7 @@
     }
 
     document.body.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],[data-screenshot-restart],[data-screenshot-apply],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-in-game-stats,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-import-screenshot,#btn-publish-build,#sum-run,#sum-all,#sum-none');
+      const t = e.target.closest('[data-arch],[data-filter],[data-pos],[data-view],[data-modal],[data-modal-close],[data-attr],[data-disable-attr],[data-sum-attr],[data-ps-slot],[data-ps-pick],[data-ps-picker-close],[data-ps-unlock],[data-ps-sell],[data-fac],[data-fac-view],[data-fac-toggle],[data-fac-preset-save],[data-fac-preset-apply],[data-fac-preset-delete],[data-spec-unlock],[data-spec-assign],[data-spec-revert],[data-ut-player],[data-ut-pos],[data-ut-only],[data-attr-inc],[data-attr-dec],[data-attr-base],[data-attr-maximize],[data-community-publish-cancel],[data-community-position],[data-community-refresh],[data-community-retry],[data-community-clear],[data-community-more],[data-community-copy],[data-community-delete],[data-community-favorite],[data-community-athlete-picker-toggle],[data-community-athlete-picker-close],[data-community-athlete],[data-community-athlete-position],[data-screenshot-restart],[data-screenshot-apply],#btn-create-build,#level-max,#btn-reset,#btn-undo,#btn-redo,#btn-share,#btn-image,#btn-weights,#btn-in-game-stats,#btn-optimize,#opt-run,#btn-utplayers,#btn-maxsum,#btn-import-screenshot,#btn-publish-build,#sum-run,#sum-all,#sum-none');
       if (e.target.id === 'modal-root') return closeModal(); // backdrop click
       if (!t) return;
       // Chips are optimizer preferences, not build state: they change the URL without
@@ -2804,7 +2996,19 @@
       }
       if (t.dataset.psPick) return equipPlaystyle(t.dataset.psPick);
       if (t.hasAttribute('data-ps-picker-close')) { ui.psPicker = false; return refreshModal(); }
-      if (t.dataset.facView) { ui.facilityKind = t.dataset.facView; return refreshModal(); }
+      if (t.hasAttribute('data-fac-preset-save')) return saveFacilityPreset();
+      if (t.dataset.facPresetApply) return applyFacilityPreset(t.dataset.facPresetApply);
+      if (t.dataset.facPresetDelete) return deleteFacilityPreset(t.dataset.facPresetDelete);
+      if (t.dataset.facToggle) {
+        if (!D.facilities.some((definition) => definition.id === t.dataset.facToggle)) return;
+        ui.facilityOpenId = ui.facilityOpenId === t.dataset.facToggle ? null : t.dataset.facToggle;
+        return refreshModal();
+      }
+      if (t.dataset.facView) {
+        ui.facilityKind = t.dataset.facView;
+        ui.facilityOpenId = null;
+        return refreshModal();
+      }
       if (t.dataset.fac) return setFacility(t.dataset.fac, +t.dataset.star, t.dataset.facKind);
       if (t.dataset.utPos) {
         const p = t.dataset.utPos;
@@ -2856,6 +3060,10 @@
         ui.communityAthleteName = t.value;
         ui.communityPublishError = null;
         return refreshModal();
+      }
+      if (t.id === 'facility-preset-name') {
+        ui.facilityPresetName = t.value;
+        return;
       }
       if (t.hasAttribute('data-screenshot-attr')) {
         const id = t.dataset.screenshotAttr;
@@ -2976,6 +3184,11 @@
       ui.screenshotDragging = false;
       const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
       if (file) void analyzeScreenshotFile(file);
+    });
+    window.addEventListener('storage', (e) => {
+      if (!facilityPresetStore || e.key !== facilityPresetStore.storageKey) return;
+      loadFacilityPresets();
+      if (ui.modal === 'facilities' && ui.facilityKind === 'player') refreshModal();
     });
 
     render();

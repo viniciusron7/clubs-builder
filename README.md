@@ -30,7 +30,10 @@ python3 -m http.server 4173 --bind 0.0.0.0
 - **Club Facilities** — 34 player Facilities and 42 AI Facilities, with up to
   three stars and one budget shared by both groups. Player Facilities provide
   in-match attribute boosts and can automatically equip PlayStyles without
-  consuming a regular slot; AI Facilities affect AI teammates only.
+  consuming a regular slot; AI Facilities affect AI teammates only. Player
+  Facilities use an expandable level view and can be saved as named club
+  presets in the browser's local storage. Presets never leave the device and
+  never replace AI Facilities.
 - **PlayStyles** (modal) — 4 **signature** PlayStyles (upgraded to "+" at levels
   30/50/75/95) plus 9 regular slots unlocked by level
   (1/10/20/40/60/70/80/90/95). Locked PlayStyles provide **Quick Unlock**, which

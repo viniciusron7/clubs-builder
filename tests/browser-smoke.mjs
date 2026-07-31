@@ -519,14 +519,37 @@ const buildBeforeFacilities = await evaluate(`JSON.stringify(Share.fromUrl())`);
 assert.equal(await evaluate(`document.querySelectorAll('[data-modal="facilities"]').length`), 1);
 assert.equal(await evaluate(`document.querySelector('#tabs').innerText.includes('Facilities')`), true);
 assert.equal(await evaluate(`document.querySelector('#panel').innerText.includes('Facilities')`), true);
+await evaluate(`localStorage.removeItem('fc26-player-facility-presets-v1')`);
 await click('[data-modal="facilities"]');
-assert.equal(await evaluate(`document.querySelectorAll('.facilities-grid .facility-card').length`), 34);
+assert.equal(await evaluate(`document.querySelectorAll('.facility-accordion-list .facility-accordion').length`), 34);
 assert.match(await evaluate(`document.querySelector('.facility-note').innerText`), /attribute boosts/i);
+assert.equal(await evaluate(`(() => {
+  const toggles = [...document.querySelectorAll('.facility-accordion-toggle')];
+  return toggles.length === 34 && toggles.every((toggle) => {
+    const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+    return toggle.getAttribute('aria-expanded') === 'false' && panel && panel.hidden;
+  });
+})()`), true);
+await click('[data-fac-toggle="head_groundskeeper"]');
+assert.equal(await evaluate(`(() => {
+  const toggle = document.querySelector('[data-fac-toggle="head_groundskeeper"]');
+  const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+  return toggle.getAttribute('aria-expanded') === 'true'
+    && panel.id === 'facility-panel-head_groundskeeper'
+    && !panel.hidden
+    && panel.querySelectorAll('[data-fac="head_groundskeeper"][data-fac-kind="player"][data-star]').length === 3;
+})()`), true);
+await click('[data-fac-toggle="equipment_manager"]');
+assert.equal(await evaluate(`document.querySelector('[data-fac-toggle="head_groundskeeper"]').getAttribute('aria-expanded')`), 'false');
+assert.equal(await evaluate(`document.querySelector('[data-fac-toggle="equipment_manager"]').getAttribute('aria-expanded')`), 'true');
+await click('[data-fac-toggle="equipment_manager"]');
+assert.equal(await evaluate(`document.querySelector('[data-fac-toggle="equipment_manager"]').getAttribute('aria-expanded')`), 'false');
 await evaluate(`(() => {
   const select = document.querySelector('#club-level');
   select.value = '10';
   select.dispatchEvent(new Event('change', { bubbles: true }));
 })()`);
+await click('[data-fac-toggle="head_groundskeeper"]');
 await click('[data-fac="head_groundskeeper"][data-fac-kind="player"][data-star="3"]');
 assert.equal(await evaluate(`(() => {
   const b = Share.fromUrl(), d = Calc.derive(b);
@@ -537,6 +560,45 @@ assert.equal(await evaluate(`(() => {
     && d.facilities.unlocks.has('press_proven')
     && d.facAdj.balance > 0;
 })()`), true);
+await evaluate(`(() => {
+  const input = document.querySelector('#facility-preset-name');
+  input.value = 'Press club';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+})()`);
+await click('[data-fac-preset-save]');
+const namedFacilityPreset = await evaluate(`(() => {
+  const payload = JSON.parse(localStorage.getItem('fc26-player-facility-presets-v1'));
+  const preset = payload.presets.find((item) => item.name === 'Press club');
+  return {
+    version: payload.v,
+    count: payload.presets.length,
+    id: preset && preset.id,
+    facilities: preset && preset.facilities,
+    hasAi: preset && Object.hasOwn(preset, 'aiFacilities'),
+    hasClubLevel: preset && Object.hasOwn(preset, 'clubLevel'),
+  };
+})()`);
+assert.equal(namedFacilityPreset.version, 1);
+assert.equal(namedFacilityPreset.count, 1);
+assert.ok(namedFacilityPreset.id);
+assert.deepEqual(namedFacilityPreset.facilities, { head_groundskeeper: 3 });
+assert.equal(namedFacilityPreset.hasAi, false);
+assert.equal(namedFacilityPreset.hasClubLevel, false);
+await click('[data-fac-preset-save]');
+const unnamedFacilityPreset = await evaluate(`(() => {
+  const payload = JSON.parse(localStorage.getItem('fc26-player-facility-presets-v1'));
+  const preset = payload.presets.find((item) => /^Club \\d+$/.test(item.name));
+  return {
+    count: payload.presets.length,
+    id: preset && preset.id,
+    name: preset && preset.name,
+    facilities: preset && preset.facilities,
+  };
+})()`);
+assert.equal(unnamedFacilityPreset.count, 2);
+assert.ok(unnamedFacilityPreset.id);
+assert.equal(unnamedFacilityPreset.name, 'Club 1');
+assert.deepEqual(unnamedFacilityPreset.facilities, { head_groundskeeper: 3 });
 await click('[data-fac-view="ai"]');
 assert.equal(await evaluate(`document.querySelectorAll('.facilities-grid .facility-card').length`), 42);
 await click('[data-fac="ai_gk_goalkeeping_coach"][data-fac-kind="ai"][data-star="2"]');
@@ -546,6 +608,54 @@ assert.equal(await evaluate(`(() => {
     && d.facilities.aiCost === 800
     && d.facilities.cost === 2000
     && d.facilities.budget === 2500;
+})()`), true);
+await click('[data-fac-view="player"]');
+await click('[data-fac-toggle="head_groundskeeper"]');
+await click('[data-fac="head_groundskeeper"][data-fac-kind="player"][data-star="0"]');
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl();
+  return Object.keys(b.facilities).length === 0
+    && b.aiFacilities.ai_gk_goalkeeping_coach === 2
+    && b.clubLevel === 10;
+})()`), true);
+await evaluate(`(() => {
+  const select = document.querySelector('#club-level');
+  select.value = '7';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+const beforeRejectedFacilityPreset = await evaluate(`JSON.stringify(Share.fromUrl())`);
+await click(`[data-fac-preset-apply="${namedFacilityPreset.id}"]`);
+assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), beforeRejectedFacilityPreset);
+assert.match(await evaluate(`document.querySelector('#toast').innerText`), /needs.*current club budget/i);
+await evaluate(`(() => {
+  const select = document.querySelector('#club-level');
+  select.value = '10';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+})()`);
+await click(`[data-fac-preset-apply="${namedFacilityPreset.id}"]`);
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl(), d = Calc.derive(b);
+  return b.facilities.head_groundskeeper === 3
+    && b.aiFacilities.ai_gk_goalkeeping_coach === 2
+    && b.clubLevel === 10
+    && d.facilities.cost === 2000;
+})()`), true);
+await click('#btn-undo');
+assert.equal(await evaluate(`(() => {
+  const b = Share.fromUrl();
+  return Object.keys(b.facilities).length === 0
+    && b.aiFacilities.ai_gk_goalkeeping_coach === 2
+    && b.clubLevel === 10;
+})()`), true);
+await click('#btn-redo');
+assert.equal(await evaluate(`Share.fromUrl().facilities.head_groundskeeper`), 3);
+await evaluate(`window.confirm = () => true`);
+await click(`[data-fac-preset-delete="${unnamedFacilityPreset.id}"]`);
+assert.equal(await evaluate(`(() => {
+  const payload = JSON.parse(localStorage.getItem('fc26-player-facility-presets-v1'));
+  return payload.presets.length === 1
+    && payload.presets[0].id === ${JSON.stringify(namedFacilityPreset.id)}
+    && Share.fromUrl().facilities.head_groundskeeper === 3;
 })()`), true);
 await screenshot('/tmp/clubs-builder-facilities.png');
 await click('[data-modal-close]');
@@ -561,14 +671,27 @@ await click('[data-modal-close]');
 await click('[data-attr="balance"]');
 assert.match(await evaluate(`document.querySelector('#panel').innerText`), /Facilities\s*\+\d+/i);
 await click('[data-attr="balance"]');
-await click('#btn-undo');
-assert.equal(await evaluate(`Object.keys(Share.fromUrl().aiFacilities).length`), 0);
-await click('#btn-redo');
-assert.equal(await evaluate(`Share.fromUrl().aiFacilities.ai_gk_goalkeeping_coach`), 2);
-await click('#btn-undo');
-await click('#btn-undo');
-await click('#btn-undo');
+for (let attempts = 0; attempts < 12; attempts += 1) {
+  if (await evaluate(`JSON.stringify(Share.fromUrl()) === ${JSON.stringify(buildBeforeFacilities)}`)) break;
+  await click('#btn-undo');
+}
 assert.equal(await evaluate(`JSON.stringify(Share.fromUrl())`), buildBeforeFacilities);
+await send('Page.reload', { ignoreCache: true });
+await waitFor(`document.readyState === 'complete'
+  && !!window.FacilityPresets
+  && !document.querySelector('#builder-app').hidden
+  && !!document.querySelector('[data-modal="facilities"]')`);
+await click('[data-modal="facilities"]');
+assert.equal(await evaluate(`(() => {
+  const rows = [...document.querySelectorAll('[data-facility-preset]')];
+  return rows.length === 1
+    && rows[0].querySelector('strong').textContent.trim() === 'Press club'
+    && rows[0].querySelector('[data-fac-preset-apply]').dataset.facPresetApply === ${JSON.stringify(namedFacilityPreset.id)};
+})()`), true);
+await evaluate(`window.confirm = () => true`);
+await click(`[data-fac-preset-delete="${namedFacilityPreset.id}"]`);
+assert.equal(await evaluate(`JSON.parse(localStorage.getItem('fc26-player-facility-presets-v1')).presets.length`), 0);
+await click('[data-modal-close]');
 
 const attributesBeforeCancel = await evaluate(`JSON.stringify(Share.fromUrl().attributes)`);
 await click('#btn-optimize');
